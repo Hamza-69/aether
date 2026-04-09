@@ -1,20 +1,15 @@
-import { openai, createAgent, createTool, createNetwork, Tool, Message, createState } from "@inngest/agent-kit"
-import {Sandbox} from '@e2b/code-interpreter'
-import { inngest } from "./client"
-import { getSandbox, lastAssistantTextMessageContent } from "./utils"
-import z from "zod"
-import { FRAGMENT_TITLE_PROMPT, PROMPT, } from "@/prompt"
-import { prisma } from "@/lib/db"
-
-interface  AgentState {
-  summary: string;
-  files: {[path:string]:string};
-}
+import { openai, createAgent, createNetwork, createState } from "@inngest/agent-kit"
+import {Sandbox} from 'e2b'
+import { inngest } from "../client"
+import { getSandbox } from "../../../lib/utils"
+import { FRAGMENT_TITLE_PROMPT } from "../prompts"
+import { prisma } from "../../../lib/prisma"
+import { codeAgent } from "../agents/agent"
+import {AgentState} from "../agents/agent"
 
 export const codeAgentFunction = inngest.createFunction(
-  { id: "code-agent" },
-  { event: "code-agent/run" },
-  async ({ event, step }) => { 
+  { id: "code-agent", triggers: [{ event: "code-agent/run" }] },
+  async ({ event, step }) => {
     const SandboxId = await step.run("get-sandbox-id", async () =>{
       const sandbox = await Sandbox.create("vibable-nexjs-hamza-3")
       await sandbox.setTimeout(60_000*10*3) // 30 mins
@@ -24,19 +19,21 @@ export const codeAgentFunction = inngest.createFunction(
     const state = createState<AgentState>(
       {
         summary: "",
-        files:{}
+        error: "",
+        SandboxId
       }
     )
 
     const network = createNetwork<AgentState>({
       name: "coding-agent-network",
       agents: [codeAgent],
-      maxIter: 15,
+      maxIter: 25,
       defaultState: state,
-      router: async ({network}) => {
+      router: async ({ network }) => {
         const summary = network.state.data.summary
+        const error = network.state.data.error
 
-        if (summary) {
+        if (summary || error) {
           return
         }
 
@@ -51,7 +48,7 @@ export const codeAgentFunction = inngest.createFunction(
       description: "A fragment title generator",
       system: FRAGMENT_TITLE_PROMPT,
       model: openai({
-        model: "gpt-5"
+        model: "gpt-5.4"
       })
     })
 
@@ -70,10 +67,17 @@ export const codeAgentFunction = inngest.createFunction(
     }
 
     const isError = 
-      !result.state.data.summary || 
-      Object.keys(result.state.data.files || {}).length === 0
-
-    const sandboxUrl = await step.run("get-sandbox-url", async () => {
+      !result.state.data.summary && result.state.data.error
+    
+    const generateResponse = () => {
+      if (isError) {
+        return result.state.data.error.replace("<error>", "").replace("</error>", "")
+      } else {
+        return result.state.data.summary.replace("<task_summary>", "").replace("</task_summary>", "")
+      }
+    }
+    
+    const sandboxUrl = await step.run("run-project-and-get-sandbox-url", async () => {
       const sandbox = await getSandbox(SandboxId)
       const host = sandbox.getHost(3000)
       return `https://${host}`
@@ -85,7 +89,7 @@ export const codeAgentFunction = inngest.createFunction(
         return await prisma.message.create({
           data: {
             projectId: event.data.projectId,
-            content: "Something went wrong. Please try again.",
+            content: generateResponse(),
             role: "ASSISTANT",
             type: "ERROR"
           }
@@ -97,14 +101,7 @@ export const codeAgentFunction = inngest.createFunction(
           projectId: event.data.projectId,
           content: generateResponse(),
           role: "ASSISTANT",
-          type: "RESULT",
-          fragment: {
-            create:{
-              sandboxUrl: sandboxUrl,
-              title: generateFragmentTitle(),
-              files: result.state.data.files,
-            }
-          }
+          type: "SUCCESS",
         }
       })
     })
@@ -112,7 +109,6 @@ export const codeAgentFunction = inngest.createFunction(
     return {
       url: sandboxUrl,
       title: "Fragment",
-      files: result.state.data.files,
       summary: result.state.data.summary
     }
   },
