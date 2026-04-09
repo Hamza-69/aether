@@ -1,0 +1,7192 @@
+# Overview (/docs)
+
+{/* # Overview */}
+
+## What is Nativewind?
+
+Nativewind allows you to use [Tailwind CSS](https://v3.tailwindcss.com) to style your components in React Native. Styled components can be shared between all React Native platforms, using the best style engine for that platform; CSS StyleSheet on web and StyleSheet.create for native. Its goals are to provide a consistent styling experience across all platforms, improving Developer UX, component performance and code maintainability.
+
+On native platforms, Nativewind performs two functions. First, at build time, it compiles your Tailwind CSS styles into `StyleSheet.create` objects and determines the conditional logic of styles (e.g. hover, focus, active, etc). Second, it has an efficient runtime system that applies the styles to your components. This means you can use the full power of Tailwind CSS, including media queries, container queries, and custom values, while still having the performance of a native style system.
+
+On web, Nativewind is a small polyfill for adding `className` support to React Native Web.
+
+## Key Features
+
+🌐 **Universal** Uses the best style system for each platform.
+
+🖥️ **DevUX** Plugins for simple setup and improving intellisense support
+
+✨ **Media & Container queries** Use modern mobile styling features like media and container queries [(docs)](../docs/core-concepts/responsive-design)
+
+👪 **Custom values (CSS Variables)** Create themes, sub-themes and dynamic styles using custom values
+
+✨ **Pseudo classes** hover / focus / active on compatible components [(docs)](../core-concepts/states#hover-focus-and-active)
+
+👪 **Parent state styles** automatically style children based upon parent pseudo classes [(docs)](../docs/core-concepts/states#styling-based-on-parent-state)
+
+🔥 **Lots of other features**
+
+- dark mode
+- arbitrary classes
+- platform selectors
+- plugins
+
+## How is this different StyleSheet.create?
+
+A full featured style system should have
+
+- Static styles
+- UI state styles (active, hover, focus, etc)
+- Responsive styles (media queries, dynamic units)
+- Container queries (styling based upon parent appearance)
+- Device state styles (orientation, color scheme)
+- Use the best rendering engine available
+
+React Native's StyleSheet system only provides static styles, with other features left for the user to implement. By using Nativewind you can focus on writing your system instead of building your own custom style system.
+
+On the web, it avoids injecting a StyleSheet at runtime by reusing the existing Tailwind CSS stylesheet, allowing you to use Server Side Rendering and much better initial page load performance.
+
+## In action
+
+Nativewind handles both the Tailwind CSS compilation and the runtime styles. It works via a JSX transform, meaning there is no need for custom wrappers/boilerplate.
+
+As all React components are transformed with JSX, it works with 3rd party modules.
+
+```tsx
+import { CustomText } from "third-party-text-component";
+
+export function BoldText(props) {
+  // You just need to write `className="<your styles>"`
+  return <CustomText className="text-bold" {...props} />;
+}
+```
+
+Styling can be dynamic and you can perform conditional logic and build up complex style objects.
+
+```tsx
+import { Text } from "react-native";
+
+export function MyText({ bold, italic, lineThrough, ...props }) {
+  const classNames = [];
+
+  if (bold) classNames.push("font-bold");
+  if (italic) classNames.push("italic");
+  if (lineThrough) classNames.push("line-through");
+
+  return <Text className={classNames.join(" ")} {...props} />;
+}
+```
+
+By default Nativewind maps `className`->`style`, but it can handle the mapping of complex components.
+
+```tsx
+remapProps(FlatList, {
+  className: "style",
+  ListFooterComponentClassName: "ListFooterComponentStyle",
+  ListHeaderComponentClassName: "ListHeaderComponentStyle",
+  columnWrapperClassName: "columnWrapperStyle",
+  contentContainerClassName: "contentContainerStyle",
+});
+
+<FlatList
+  {...}
+  className="bg-black"
+  ListHeaderComponentClassName="bg-black text-white"
+  ListFooterComponentClassName="bg-black text-white"
+  columnWrapperClassName="bg-black"
+  contentContainerClassName="bg-black"
+  indicatorClassName="bg-black"
+/>
+```
+
+And can even work with components that expect style attributes as props
+
+```tsx
+import { Text } from "react-native";
+import { cssInterop } from "nativewind";
+import { Svg, Circle } from "react-native-svg";
+
+/**
+ * Svg uses `height`/`width` props on native and className on web
+ */
+const StyledSVG = cssInterop(Svg, {
+  className: {
+    target: "style",
+    nativeStyleToProp: {
+      height: true,
+      width: true,
+    },
+  },
+});
+/**
+ * Circle uses `fill`/`stroke`/`strokeWidth` props on native and className on web
+ */
+const StyledCircle = cssInterop(Circle, {
+  className: {
+    target: "style",
+    nativeStyleToProp: {
+      fill: true,
+      stroke: true,
+      strokeWidth: true,
+    },
+  },
+});
+
+export function BoldText(props) {
+  return (
+    <Svg className="w-1/2 h-1/2" viewBox="0 0 100 100">
+      <StyledCircle
+        className="fill-green-500 stroke-blue-500 stroke-2"
+        cx="50"
+        cy="50"
+        r="45"
+      />
+    </Svg>
+  );
+}
+```
+
+# cssInterop (/docs/api/css-interop)
+
+{/* # `cssInterop` */}
+
+This function "tags" components so that when its rendered, the runtime will know to resolve the className strings into styles. You should only use this when:
+
+- You have a custom native component
+- You are using a third party component that needs the style prop to be resolved
+- You are using a third party component that does not pass all its props to its children
+
+## Usage
+
+```tsx
+import { cssInterop } from 'nativewind';
+
+// Create a new prop and map it to an existing prop
+cssInterop(component, { "new-prop": "existing-prop" });
+
+// Override an existing prop.
+cssInterop(component, { "new-prop": true });
+
+// Override an existing prop.
+cssInterop(component, {
+  "new-prop": {
+    target: "existing-prop", // string or boolean
+    nativeStyleToProp: {
+      "style-attribute": "existing-prop",
+    }
+    }
+  }
+});
+```
+
+## Examples
+
+Here is the mapping using the core component, `<TextInput />`
+
+```tsx
+cssInterop(TextInput, {
+  className: {
+    target: "style", // map className->style
+    nativeStyleToProp: {
+      textAlign: true, // extract `textAlign` styles and pass them to the `textAlign` prop
+    },
+  },
+  placeholderClassName: {
+    target: false, // Don't pass this as a prop
+    nativeStyleToProp: {
+      color: "placeholderTextColor", // extract `color` and pass it to the `placeholderTextColor`prop
+    },
+  },
+  selectionClassName: {
+    target: false, // Don't pass this as a prop
+    nativeStyleToProp: {
+      color: "selectionColor", // extract `color` and pass it to the `selectionColor`prop
+    },
+  },
+});
+```
+
+# StyleSheet (/docs/api/native-wind-style-sheet)
+
+<!-- # StyleSheet -->
+
+In NativeWind v4, the `StyleSheet` is exported from `react-native-css-interop` (and re-exported from `nativewind`). It provides internal methods used by the build system and runtime.
+
+<Callout type="warn" title="NOTE">
+The `NativeWindStyleSheet` API from v2/v3 (with methods like `setOutput`, `setDimensions`, `setAppearance`) no longer exists in v4. Use `useColorScheme()` for color scheme management instead.
+</Callout>
+
+## Color Scheme Management
+
+To set or toggle the color scheme, use the [`useColorScheme()`](./use-color-scheme) hook:
+
+```tsx
+import { useColorScheme } from "nativewind";
+
+function MyComponent() {
+  const { colorScheme, setColorScheme, toggleColorScheme } = useColorScheme();
+
+  return (
+    <Text onPress={() => toggleColorScheme()}>
+      {`The color scheme is ${colorScheme}`}
+    </Text>
+  );
+}
+```
+
+<Callout type="warn" title="CAUTION">
+`setColorScheme` and `toggleColorScheme` require `darkMode: "class"` in your Tailwind config. They will throw an error if `darkMode` is set to `"media"` (the default).
+</Callout>
+
+## Internal Methods
+
+The `StyleSheet` object exposes the following methods, primarily used internally by the build system:
+
+| Method | Description |
+| --- | --- |
+| `registerCompiled(options)` | Registers compiled CSS data from the Metro transform |
+| `getFlag(name)` | Retrieves a build flag (e.g. `darkMode` strategy) |
+| `getGlobalStyle(name)` | Retrieves a registered global style rule |
+
+These methods are not intended for direct use in application code.
+
+# remapProps (/docs/api/remap-props)
+
+{/* # `remapProps` */}
+
+Nativewind provides the `remapProps` utility to simplify working with third-party components with multiple "style" props.
+
+```tsx
+import { remapProps } from "nativewind";
+
+/**
+  ThirdPartyButton is a component with two "style" props, buttonStyle & labelStyle.
+  We can use remapProps to create new props that accept Tailwind CSS's classNames.
+ */
+const CustomizedButton = remapProps(ThirdPartyButton, {
+  buttonClass: "buttonStyle",
+  labelClass: "labelStyle",
+});
+
+<CustomizedButton buttonClass="bg-blue-500" labelClass="text-white" />;
+```
+
+`remapProps` can be used with the following options
+
+```tsx
+// Create a new prop and map it to an existing prop
+remapProps(component, { "new-prop": "existing-prop" });
+
+// Override an existing prop.
+remapProps(component, { prop: true });
+```
+
+# useColorScheme() (/docs/api/use-color-scheme)
+
+useColorScheme() provides access to the devices color scheme.
+
+| Value             | Description                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------ |
+| colorScheme       | The current device colorScheme                                                                         |
+| setColorScheme    | Override the current colorScheme with a different scheme (accepted values are `light`/`dark`/`system`) |
+| toggleColorScheme | Toggle the color scheme between `light` and `dark`                                                     |
+
+<Callout type="warn" title="CAUTION">
+`setColorScheme` and `toggleColorScheme` require `darkMode: "class"` in your Tailwind config. They will throw an error if `darkMode` is set to `"media"` (the default). See the [Tailwind CSS dark mode docs](https://tailwindcss.com/docs/dark-mode#toggling-dark-mode-manually) for setup instructions.
+</Callout>
+
+```tsx
+import { useColorScheme } from "nativewind";
+import { Text } from "react-native";
+
+function MyComponent() {
+  const { colorScheme, setColorScheme } = useColorScheme();
+
+  return (
+    <Text
+      onPress={() => setColorScheme(colorScheme === "light" ? "dark" : "light")}
+    >
+      {`The color scheme is ${colorScheme}`}
+    </Text>
+  );
+}
+```
+
+# vars() & useUnstableNativeVariable() (/docs/api/vars)
+
+{ /* # vars() & useUnstableNativeVariable() */}
+
+## vars()
+
+`vars` is a function that takes a dictionary of CSS variables and returns a style object that can be used in React Native components. This allows you to set CSS variable values from JavaScript and have them flow down the component tree.
+
+```tsx
+import { View, Text } from "react-native";
+import { vars } from "nativewind";
+
+function ThemedSection({ brandColor }) {
+  return (
+    <View style={vars({ "--brand-color": brandColor })}>
+      <Text className="text-[--brand-color]">Themed text</Text>
+    </View>
+  );
+}
+```
+
+Variables set via `vars()` follow standard CSS variable inheritance -- child components can reference variables set by any ancestor. Variables are reactive and update children when values change.
+
+## useUnstableNativeVariable()
+
+<Callout type="warn" title="UNSTABLE API">
+This hook is prefixed with "unstable" because its API may change in future versions.
+</Callout>
+
+`useUnstableNativeVariable` reads a CSS variable value from the current variable context. This is useful when you need to access a CSS variable's resolved value directly in JavaScript rather than through a className.
+
+```tsx
+import { useUnstableNativeVariable } from "nativewind";
+
+function MyComponent() {
+  const brandColor = useUnstableNativeVariable("--brand-color");
+
+  // brandColor is the resolved value, e.g. "red"
+  return <ThirdPartyComponent color={brandColor} />;
+}
+```
+
+The hook is reactive -- if the variable's value changes (e.g. due to a parent re-rendering with different `vars()`), the component will re-render with the new value. It reads from `:root` variables and any variables set by ancestor components via `vars()` or className.
+
+# withNativeWind (/docs/api/with-nativewind)
+
+{/* # withNativeWind */}
+
+`withNativeWind` is a higher order component that updates your Metro configuration to support NativeWind.
+
+The only required option is `input`, which is the relative path to your `.css` file.
+
+```tsx title=metro.config.js
+import { withNativeWind } from "native-wind/metro";
+
+module.exports = withNativeWind(config, {
+  input: "<relative path to your .css file>",
+});
+```
+
+## Options
+
+- `output`: The relative path to the output file. Defaults to `<projectRoot>/node_modules/.cache/nativewind/`
+- `projectRoot`: Abolsute path to your project root. Only used to set `output`
+- `inlineRem`: The numeric value used to inline the value of `rem` units on native. `false` will disable the behaviour. Defaults to `14`. [More information](../tailwind/typography/font-size.mdx)
+- `configPath`: Relative path to your `tailwind.config` file. Defaults to `tailwind.config`. Recommended you use [`@config`](https://tailwindcss.com/docs/functions-and-directives#config) instead of this option.
+- `hotServerOptions`: Options to pass to the hot server. Defaults to `{ port: 8089 }`
+
+### Experimental Options
+
+These options are available under the `experiments` key.
+
+- `inlineAnimations`: Use `react-native-reanimated`'s inline shared values instead of hooks. This greatly improves performance, but has [issues with fast-refresh](https://github.com/software-mansion/react-native-reanimated/pull/5268)
+
+# Dark Mode (/docs/core-concepts/dark-mode)
+
+Nativewind supports two primary approaches for implementing dark mode in your app:
+
+1. **System Preference (Automatic)**
+2. **Manual Selection (User Toggle)**
+
+Both approaches use [`colorScheme`](../api/use-color-scheme) from Nativewind, which provides a unified API for reading and setting the color scheme using React Native's appearance APIs. Under the hood, the `Appearance` API is used on native and `prefers-color-scheme` is used on web. 
+
+- To **read** the current system preference, use the `colorScheme` value returned from `useColorScheme`.
+- To **manually set** the color scheme (e.g., via a user toggle), use the `colorScheme.set()` function.
+
+Both `colorScheme` and `colorScheme.set()` are imported from Nativewind.
+
+---
+
+## 1. System Preference (Automatic)
+
+By default, Nativewind will follow the device's system appearance (light, dark, or automatic). This is the recommended approach for most apps, as it provides a seamless experience for users who have set their device to a preferred mode.
+
+To read the current system preference, use the `colorScheme` value from the `useColorScheme` hook:
+
+> **Expo Note:**
+> Expo apps only follow the system appearance if `userInterfaceStyle` is set to `automatic` in your `app.json`.
+> See the [Expo color scheme guide](https://docs.expo.dev/guides/color-schemes/) for more details.
+
+**Example (Expo Snack):**
+See a full example in the [Expo Docs](https://docs.expo.dev/develop/user-interface/color-themes/#minimal-example).
+
+This will automatically update when the system appearance changes.
+
+---
+
+## 2. Manual Selection (User Toggle)
+
+If you want to allow users to manually select between light, dark, or system mode, you should use the `colorScheme.set()` function. This is useful for apps that provide a theme toggle in their UI.
+
+**Example:**
+See a full implementation at [nativewind/theme-toggle on GitHub](https://github.com/nativewind/theme-toggle).
+
+**Basic Toggle Example:**
+```tsx
+import { useState } from "react";
+import { SafeAreaView, Text, Pressable } from "react-native";
+import { colorScheme } from "nativewind";
+import { StatusBar } from 'expo-status-bar';
+
+import './global.css';
+
+export default function App() {
+  const [currentTheme, setCurrentTheme] = useState<"light" | "dark">("light");
+
+  const toggleTheme = () => {
+    const newTheme = currentTheme === "light" ? "dark" : "light";
+    setCurrentTheme(newTheme);
+    colorScheme.set(newTheme);
+  };
+
+  return (
+    <SafeAreaView
+      className={`flex-1 ${currentTheme === 'dark' ? 'bg-gray-900' : 'bg-white'} justify-center items-center`}
+    >
+      <StatusBar style={currentTheme === 'dark' ? 'light' : 'dark'} />
+      <Pressable
+        onPress={toggleTheme}
+        className="mt-4"
+      >
+        <Text className={currentTheme === 'dark' ? 'text-gray-100' : 'text-gray-900'} style={{ fontSize: 16, fontWeight: 'bold' }}>
+          {currentTheme === 'dark' ? 'Dark' : 'Light'}
+        </Text>
+      </Pressable>
+    </SafeAreaView>
+  );
+}
+```
+
+You can persist the user's choice using a storage solution like [React Native Async Storage](https://react-native-async-storage.github.io/async-storage/).
+
+---
+
+## Best Practice
+
+- **Use the `colorScheme` value from `useColorScheme`** to read the current color scheme (system preference).
+- **Use `colorScheme.set()`** to allow users to manually select a color scheme.
+- For most apps, system preference is recommended.
+- If you provide a manual toggle, always offer a "System" option as well.
+
+---
+
+## References
+
+- [Expo Color Schemes Guide](https://docs.expo.dev/guides/color-schemes/)
+- [Nativewind useColorScheme API](../api/use-color-scheme)
+- [Theme Toggle Example (GitHub)](https://github.com/nativewind/theme-toggle)
+
+# Platform Differences (/docs/core-concepts/differences)
+
+<!-- # Platform Differences -->
+
+Nativewind aligns CSS and React Native into a common language. However the two style engines do have their differences. These are some common differences you may encounter.
+
+## Styling per platform
+
+Styles can be applied selectively per platform using a platform variant. Additionally the `native` variant can be used to target all platforms except for web.
+
+Supported platform modifiers are: `ios:`, `android:`, `web:`, `windows:`, `osx:`, `native:`.
+
+## Explicit styles
+
+React Native has various issues when conditionally applying styles. To prevent these issues it's best to declare all styles.
+
+For example, instead of only applying a text color for dark mode, provide both a light and dark mode text color.
+
+```tsx
+❌ <Text className="dark:text-white-500" />
+✅ <Text className="text-black dark:text-red-500" />
+```
+
+## dp vs px
+
+React Native's default unit is density-independent pixels (dp) while the web's default is pixels (px). These two units are different, however Nativewind treats them as if they are equivalent. This can cause confusion in your theme, do you use `10` or `10px`? The general rule of theme is use `10px`, and Nativewind will fix it for you.
+
+## Flex
+
+React Native uses a different base flex definition to the web. Generally this can be fixed by adding `flex-1` to your classes, however you may need custom styles for more complex layouts.
+
+## Flex Direction
+
+React Native uses a different default `flex-direction` to the web. This can be fixed by explicitly setting a `flex-direction`.
+
+## rem sizing
+
+React Native's `<Text />` renders with a `fontSize: 14`, while the web's default is `16px`. For consistency, Nativewind uses an `rem` value of `16` on web and `14` on native.
+
+## Color Opacity
+
+For performance reasons, Nativewind renders with the `corePlugins`: `textOpacity`,`borderOpacity`, `divideOpacity` and `backgroundOpacity` disabled. Theses plugin allows colors to dynamically changed via CSS variables. Instead, the opacity is set as a static value in the `color` property.
+
+If you require this functionality, you can enable the disabled plugins in your `tailwind.config.js` file.
+
+# Functions & Directives (/docs/core-concepts/functions-and-directives)
+
+{/* # Functions & Directives */}
+
+## Overview
+
+Nativewind allows the same functions and directives as Tailwind CSS. Please refer to the [Tailwind CSS documentation](https://tailwindcss.com/docs/functions-and-directives).
+
+These functions can be used within your theme, arbitrary class names, or within your custom CSS.
+
+In addition to the functions and directives provided by Tailwind CSS, Nativewind polyfills the following CSS functions:
+
+## var()
+
+`var()` is a CSS function that allows you to use the value of a custom property (sometimes called a "CSS variable") inside the value of another property.
+
+```js title="tailwind.config.js"
+module.exports = {
+  theme: {
+    extend: {
+      color: {
+        custom: "var(--my-custom-color)",
+      },
+    },
+  },
+};
+```
+
+```tsx
+// style: { color: "red" }
+<Text className="text-custom [--my-custom-color:red]">
+
+// style: { color: "green" }
+<View style={vars({ "--my-custom-color": "green" })}>
+  <Text className="text-custom">
+</View>
+```
+
+## calc()
+
+`calc()` is a CSS function that allows you to perform calculations when specifying CSS property values. It can be used to perform addition, subtraction, multiplication, and division and can be used with other CSS functions such as `var()`
+
+### Supported Modes
+
+Nativewind supports `calc()` with the following unit types:
+
+- **Numerical** (`px`): `calc(10px + 100px)` resolves to `110`
+- **Percentage** (`%`): `calc(var(--width) + 20%)` resolves to `"30%"` (when `--width` is `10%`)
+- **`rem` units**: `calc(2rem * 5)` resolves correctly using the platform rem value
+- **`em` units**: `calc(2em * 2)` resolves relative to the element's font size
+- **CSS variables**: `calc(var(--variable) + 20px)` resolves with the variable's runtime value
+- **Inside color functions**: `hsl(calc(var(--H) + 20), calc(var(--S) - 10%), calc(var(--L) + 30%))` works for dynamic color calculations
+
+```css
+// Numerical calc
+.element {
+  width: calc(10px + 100px);
+}
+
+// With rem units
+.element {
+  width: calc(2rem * 5);
+}
+
+// With CSS variables
+.element {
+  width: calc(var(--my-variable) + 20px);
+}
+
+// Inside color functions
+.element {
+  background-color: hsl(
+    calc(var(--H) + 20),
+    calc(var(--S) - 10%),
+    calc(var(--L) + 30%)
+  )
+}
+```
+
+### Limitations
+
+#### Mixing Unit Types
+
+React Native's layout engine does not support mixing numerical and percentage units in the same expression. Ensure all operands use the same unit type.
+
+```css
+.element {
+  // ❌ This mixes numerical and percentage units
+  width: calc(100% - 20px);
+}
+
+.element {
+  // ✅  This only uses numerical units
+  --width: 100rem;
+  width: calc(var(--width) - 20px);
+}
+
+.element {
+  // ✅  This only uses percentage units
+  --width: 100%;
+  width: calc(var(--width) - 20%);
+}
+```
+
+#### Custom Properties
+
+Nativewind does not support operations in custom properties. Instead, you can use `calc()` with custom properties by first defining the custom property and then using `calc()` to perform the operation.
+
+```css
+.element {
+  // ❌ Operators cannot be in a custom property
+  --width: 100% - 20%;
+  width: calc(var(--width));
+}
+
+.element {
+  // ✅  Operator is part of the calc() expression
+  --width: 100%;
+  width: calc(var(--width) - 20%);
+}
+```
+
+## env()
+
+`env()` is a CSS function that allows you to access device specific environment information.
+
+Nativewind supports:
+
+```css
+env(safe-area-inset-top);
+env(safe-area-inset-bottom);
+env(safe-area-inset-left);
+env(safe-area-inset-right);
+```
+
+Please see [Safe Area Insets](../tailwind//new-concepts/safe-area-insets.mdx) for more information.
+
+# Quirks (/docs/core-concepts/quirks)
+
+{  /* # Quirks */}
+
+Nativewind aligns CSS and React Native into a common language. However the two style engines do have their differences. We refer to these differences as quirks.
+
+## Explicit styles
+
+React Native has various issues when conditionally applying styles. To prevent these issues it's best to declare all styles.
+
+For example, instead of only applying a text color for dark mode, provide both a light and dark mode text color. This is especially important for transitions and animations.
+
+## dp vs px
+
+React Native's default unit is density-independent pixels (dp) while the web's default is pixels (px). These two units are different, however Nativewind treats them as if they are equivalent. Additionally, the Nativewind's compiler requires a unit for most numeric values forcing some styles to use a `px` unit. Generally this works fine, however you may need to use the platform modifiers (`web:`/`native:`/`ios:`/`android:`) to adjust per platform
+
+## Flex
+
+Flexbox works the same way in React Native as it does in CSS on the web, with a few exceptions. The defaults are different, with `flexDirection` defaulting to `column` instead of `row`, `alignContent` defaulting to `flex-start` instead of `stretch`, `flexShrink` defaulting to `0` instead of `1`, the `flex` parameter only supporting a single number.
+
+We recommend explicitly setting the flex direction and using the className `flex-1` for consistent styles
+
+## Yoga 2 vs 3
+
+React Native previously flipped left/right (and start/end) edges when dealing with margin, padding, or border, set on a row-reverse container. In Yoga 3 (introduced in React Native 0.74) the behavior of these properties lines up with web.
+
+# Responsive Design (/docs/core-concepts/responsive-design)
+
+{/* # Responsive Design */}
+
+<Callout type="warn" title="CAUTION">
+Nativewind's default theme is not yet designed for native devices and still uses breakpoints that were mostly designed for web.
+</Callout>
+
+Nativewind's responsive design works identically to Tailwind CSS, please refer to the [official Tailwind CSS docs](https://tailwindcss.com/docs/responsive-design) for more information.
+
+# States & Pseudo-classes (/docs/core-concepts/states)
+
+{/* # States & Pseudo-classes */}
+
+## Hover, Focus, and Active
+
+Nativewind supports the `:hover`, `:focus`, and `:active` pseudo-classes. These work by mapping to the corresponding React Native event props on the component.
+
+| Pseudo-class | Tailwind Modifier | Activating Event | Deactivating Event |
+| --- | --- | --- | --- |
+| `:hover` | `hover:` | `onHoverIn` | `onHoverOut` |
+| `:active` | `active:` | `onPressIn` | `onPressOut` |
+| `:focus` | `focus:` | `onFocus` | `onBlur` |
+
+```tsx
+import { Pressable, Text } from "react-native";
+
+function MyButton() {
+  return (
+    <Pressable className="bg-blue-500 active:bg-blue-700">
+      <Text className="text-white">Press Me</Text>
+    </Pressable>
+  );
+}
+```
+
+<Callout type="info">
+The component must support the relevant event prop for the modifier to work. For example, `hover:` requires `onHoverIn`/`onHoverOut`, which is available on `Pressable` and `TextInput` but not `View` or `Text`.
+</Callout>
+
+### Combining Pseudo-classes
+
+Multiple pseudo-classes can be combined. All conditions must be met for the styles to apply:
+
+```tsx
+<TextInput className="hover:active:focus:border-blue-500" />
+```
+
+## Disabled and Empty
+
+Nativewind supports the `:disabled` and `:empty` pseudo-classes.
+
+| Pseudo-class | Tailwind Modifier | Condition |
+| --- | --- | --- |
+| `:disabled` | `disabled:` | Component has `disabled={true}` prop |
+| `:empty` | `empty:` | Component has no children |
+
+```tsx
+import { TextInput } from "react-native";
+
+function MyInput({ disabled }) {
+  return (
+    <TextInput
+      className="border disabled:opacity-50 disabled:bg-gray-200"
+      disabled={disabled}
+    />
+  );
+}
+```
+
+## Data Attribute Selectors
+
+Nativewind supports `[data-*]` attribute selectors, allowing you to style components based on data attributes. This uses React Native Web's `dataSet` prop.
+
+```tsx
+import { View, Text } from "react-native";
+
+function StatusBadge({ active }) {
+  return (
+    <View
+      className="[&[data-active]]:bg-green-500 [&[data-active='false']]:bg-gray-500"
+      {...{ dataSet: { active: active } }}
+    >
+      <Text>Status</Text>
+    </View>
+  );
+}
+```
+
+Attribute selectors support both presence checks (`[data-test]`) and value equality checks (`[data-test='value']`).
+
+## Styling Based on Parent State
+
+You can style child components based on the state of a parent using the `group` utility. Add `group/{name}` to the parent and use `group-hover/{name}:`, `group-active/{name}:`, or `group-focus/{name}:` modifiers on children.
+
+```tsx
+import { Pressable, Text, View } from "react-native";
+
+function Card() {
+  return (
+    <Pressable className="group/card">
+      <View className="group-active/card:bg-blue-100">
+        <Text className="group-active/card:text-blue-700">
+          Press the card to see child styles change
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+```
+
+### How it works
+
+1. The parent component is tagged with `group/{name}` (e.g. `group/item`)
+2. Children use `group-{modifier}/{name}:` to react to the parent's state
+3. When the parent's state changes (e.g. pressed), child styles update automatically
+4. Transitions and animations work with group states
+
+```tsx
+<View className="group/item">
+  <Text className="group-active/item:text-red-500 transition-colors duration-300">
+    This text transitions to red when the parent is pressed
+  </Text>
+</View>
+```
+
+# Style Specificity (/docs/core-concepts/style-specificity)
+
+{  /* # Style Specificity */}
+
+Nativewind employs a specificity model that aligns with CSS rules, augmented to accommodate the inline-style characteristic of React Native and its existing ecosystem.
+
+## Problem Identification
+
+```tsx
+function MyText({ style }) {
+  return <Text {...props} style={[{ color: 'black' }, style]} />;
+}
+
+remapProps(MyText, { className: 'style' })
+
+<MyText style={{ color: 'red' }}>The text will be red on all platforms</MyText>
+<MyText className="text-red-500">What color should I render as?</MyText>
+```
+
+Different platforms interpret this differently due to variations in style specificity rules, causing inconsistencies.
+
+```tsx
+// Native has red text
+<Text style={{ color: 'black' }, { color: 'red' }} />
+
+// Web has black text
+<Text className="text-red-500" style={{ color: 'black'}} />
+```
+
+## Specificity Order
+
+Nativewind has defined the following order of specificity (highest to lowest):
+
+- Styles marked as important (following CSS specificity order)
+- Inline & remapped styles (applied in right-to-left order)
+- className styles (following CSS specificity order)
+
+## Concept of Remapped Styles
+
+Remapped styles are a novel concept introduced by Nativewind, not present in traditional CSS. They refer to styles translated from a className to a prop, and applied inline. This approach maintains the order of styles, ensuring consistency with existing React Native components.
+
+## Addressing Styling Differences
+
+To address styling discrepancies across platforms, Nativewind allows the use of the !important modifier. This returns the styles to a specificity-based order, facilitating consistency.
+
+## Examples
+
+### Basic components
+
+```tsx
+// Basic components
+<Text className="text-red-500" style={{ color: 'green' }} /> // green text
+<Text className="!text-red-500" style={{ color: 'green' }} /> // red text
+
+// Remapped components (reusing the initial problem example)
+<MyText className="text-red-500" /> // Native: red, Web: black
+<MyText className="!text-red-500" /> // Both platforms: red
+
+```
+
+# Built on Tailwind CSS (/docs/core-concepts/tailwindcss)
+
+{  /* # Built on Tailwind CSS */}
+
+Nativewind is built upon the Tailwind CSS style language. As such the core-concepts of Tailwind CSS apply to Nativewind. Recommend you read their guides on:
+
+- [Utility-First Fundamentals](https://tailwindcss.com/docs/utility-first)
+- [Reusing Styles](https://tailwindcss.com/docs/reusing-styles)
+- [Adding Custom Styles](https://tailwindcss.com/docs/adding-custom-styles)
+
+It is also important to understand that since CSS styles are generated via the Tailwind CLI, the entire Tailwind CSS language & compiler options are available for web.
+
+This documentation only documents whats is universally compatible, but you can always use a platform prefix to apply styles that are only support on web.
+
+# Supporting React Native
+
+Nativewind works in a similar manner to CSS, it can accept all classes but will only apply the styles that it support. For example, if you use `grid`, this will work on web but not on native.
+
+Please read the [differences guide](./differences) for more information on some minor differences between Nativewind and Tailwind CSS.
+
+# Units (/docs/core-concepts/units)
+
+## Polyfilled Units
+
+You can use these units within classes or `tailwind.config.js`.
+
+<table>
+  <tbody>
+    <tr>
+      <th>Unit</th>
+      <th>Name</th>
+      <th>Description</th>
+    </tr>
+    <tr>
+      <td>vw</td>
+      <td>View Width</td>
+      <td>Polyfilled using Dimensions.get('window')</td>
+    </tr>
+    <tr>
+      <td>vh</td>
+      <td>View height</td>
+      <td>Polyfilled using Dimensions.get('window')</td>
+    </tr>
+  </tbody>
+</table>
+
+# Colors (/docs/customization/colors)
+
+<!-- # Colors -->
+
+You can customize your colors in the same manner as Tailwind CSS. Please refer to the [Tailwind CSS documentation](https://tailwindcss.com/docs/customizing-colors) for more information.
+
+## Platform Colors
+
+Unlike the web, which uses a common color palette, native platforms have their own unique system colors which are accessible through [PlatformColor](https://reactnative.dev/docs/platformcolor).
+
+Nativewind allows you to use access PlatformColor via the `platformColor()` utility.
+
+```js
+// tailwind.config.js
+
+const { platformSelect, platformColor } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        error: platformSelect({
+          // Now you can provide platform specific values
+          ios: platformColor("systemRed"),
+          android: platformColor("?android:colorError"),
+          default: "red",
+        }),
+      },
+    },
+  },
+};
+```
+
+# Configuration (/docs/customization/configuration)
+
+<!-- # Configuration -->
+
+Nativewind uses the same `tailwind.config.js` as Tailwind CSS. You can read more about how to configure your project [through the Tailwind CSS documentation](https://tailwindcss.com/docs/configuration).
+
+## Metro configuration
+
+### `input`
+
+**required**
+
+Type: `string`
+
+The path to the entry file for your Tailwind styles
+
+### `projectRoot`
+
+Default: `process.cwd()`
+
+The path to the root of your project
+
+### `outputDir`
+
+Default: `node_modules/.cache/nativewind`
+
+The path to the directory where the generated styles should be written. Should be relative to the `projectRoot`
+
+### `configFile`
+
+Default: `tailwind.config.js`
+
+The path to your Tailwind config file
+
+### `cliCommand`
+
+Default: `node node_modules/tailwind/lib/cli.js`
+
+The command to run the Tailwind CLI
+
+### `browserslist`
+
+Default: `last 1 versions`
+
+The [browserslist used by browserslist & autoprefixer](https://github.com/postcss/autoprefixer)
+
+### `browserslistEnv`
+
+Default: `native`
+
+The [environment used by browserslist & autoprefixer](https://github.com/browserslist/browserslist#configuring-for-different-environments)
+
+### `hotServerOptions`
+
+Default: `{ port: <next-available> }`
+
+The options passed to `ws` for the development hot reloading server.
+
+# Content (/docs/customization/content)
+
+<!-- # Content -->
+
+Nativewind follows the same `content` rules as Tailwind CSS. Please refer to the [Tailwind CSS documentation](https://tailwindcss.com/docs/content-configuration) for more information and troubleshooting steps.
+
+# Screens (/docs/customization/screens)
+
+<!-- # Screens -->
+
+# Theme (/docs/customization/theme)
+
+<!-- # Theme -->
+
+Nativewind uses the same theme values as as Tailwind CSS. You can read more about how to configure your project [through the Tailwind CSS documentation](https://tailwindcss.com/docs/theme).
+
+Fully dynamic React Native applications often make use of helper functions such as `Platform.select` and `PixelRatio`. Nativewind exports helpers allowing you to embed these functions into your theme.
+
+## platformSelect
+
+`platformSelect` is the equivalent to [`Platform.select()`](https://reactnative.dev/docs/platform#select).
+
+```js
+// tailwind.config.js
+
+const { platformSelect } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        error: platformSelect({
+          ios: "red",
+          android: "blue",
+          default: "green",
+        }),
+      },
+    },
+  },
+};
+```
+
+### platformColor()
+
+Equivalent of [`PlatformColor`](https://reactnative.dev/docs/platformcolor). Typically used with `platformSelect`.
+
+```ts title=tailwind.config.js
+const { platformColor } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        platformRed: platformSelect({
+          android: platformColor("systemRed"),
+          web: "red",
+        }),
+      },
+    },
+  },
+};
+```
+
+### hairlineWidth()
+
+Equivalent of [`StyleSheet.hairlineWidth`](https://reactnative.dev/docs/stylesheet#hairlinewidth)
+
+```ts title=tailwind.config.js
+const { hairlineWidth } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      borderWidth: {
+        hairline: hairlineWidth(),
+      },
+    },
+  },
+};
+```
+
+### pixelRatio()
+
+Equivalent of [`PixelRatio.get()`](https://reactnative.dev/docs/pixelratio#get). If a number is provided it returns `PixelRatio.get() * <value>`, otherwise it returns the PixelRatio value.
+
+```ts title=tailwind.config.js
+const { pixelRatio } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      borderWidth: {
+        number: pixelRatio(2),
+      },
+    },
+  },
+};
+```
+
+### pixelRatioSelect()
+
+A helper function to use [`PixelRatio.get()`](https://reactnative.dev/docs/pixelratio#get) in a conditional statement, similar to `Platform.select`.
+
+```ts title=tailwind.config.js
+const { pixelRatio, hairlineWidth } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      borderWidth: pixelRatioSelect({
+        2: 1,
+        default: hairlineWidth(),
+      }),
+    },
+  },
+};
+```
+
+### fontScale()
+
+Equivalent of [`PixelRatio.getFontScale()`](https://reactnative.dev/docs/pixelratio#getFontScale). If a number is provided it returns `PixelRatio.getFontScale() * <value>`, otherwise it returns the `PixelRatio.getFontScale()` value.
+
+```ts title=tailwind.config.js
+const { fontScale } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      fontSize: {
+        custom: fontScale(2),
+      },
+    },
+  },
+};
+```
+
+### fontScaleSelect()
+
+A helper function to use [`PixelRatio.getFontScale()`](https://reactnative.dev/docs/pixelratio#getFontScale) in a conditional statement, similar to `Platform.select`.
+
+```ts title=tailwind.config.js
+const { fontScaleSelect, hairlineWidth } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      fontSize: {
+        custom: fontScaleSelect({
+          2: 14,
+          default: 16,
+        }),
+      },
+    },
+  },
+};
+```
+
+### getPixelSizeForLayoutSize()
+
+Equivalent of `PixelRatio.getPixelSizeForLayoutSize()`
+
+```js title=tailwind.config.js
+const { getPixelSizeForLayoutSize } = require("nativewind");
+
+module.exports = {
+  theme: {
+    extend: {
+      size: {
+        custom: getPixelSizeForLayoutSize(2),
+      },
+    },
+  },
+};
+```
+
+### roundToNearestPixel()
+
+Equivalent of `PixelRatio.roundToNearestPixel()`
+
+```ts title=tailwind.config.js
+const { roundToNearestPixel } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      size: {
+        custom: roundToNearestPixel(8.4)
+      },
+    },
+  },
+});
+```
+
+# Editor Setup (/docs/getting-started/editor-setup)
+
+{  /* # Editor Setup */}
+
+Please refer to the [v3 documentation on the Tailwind CSS website](https://v3.tailwindcss.com/docs/editor-setup) for more information.
+
+## Editor Support for Custom ClassName Props
+
+When using `cssInterop` or `remapProps` to create custom className props for third-party components, you may need to configure your editor to recognize these new props for proper IntelliSense and autocomplete.
+
+For detailed information about working with third-party components and creating custom className props, see the [Styling Third-Party Components](../guides/third-party-components) guide.
+
+### VS Code Configuration
+
+If you're using VS Code with the Tailwind CSS IntelliSense extension, you can add custom className props to the `tailwindCSS.classAttributes` setting:
+
+```json
+{
+  (...)
+  "tailwindCSS.classAttributes": [
+    "class",
+    "className",
+    "headerClassName"
+  ]
+}
+```
+
+This will enable autocomplete and IntelliSense for your custom className props created with `cssInterop` or `remapProps`.
+
+# Troubleshooting (/docs/getting-started/troubleshooting)
+
+{/* # Troubleshooting */}
+
+<Callout type="tip">
+While troubleshooting, always start your application without the cache!
+
+- Expo: `npx expo start --clear`
+- Framework-less React Native: `npx react-native start --reset-cache`
+</Callout>
+
+Before troubleshooting Nativewind, it's crucial to ensure that Tailwind CSS itself is functioning correctly. Nativewind uses the Tailwind CLI to compile your styles, so any issues with the Tailwind CLI should be resolved first. 
+
+Using the command `npx tailwindcss --input <input.css> --output output.css`, the Tailwind CLI will generate an `output.css` file. **The `<input.css>` should be your project's main CSS file (typically `global.css` or `styles.css`) that contains the `@import 'tailwindcss';` directive.**
+
+For example:
+```bash
+npx tailwindcss --input ./global.css --output output.css
+```
+
+If you are troubleshooting a class that is not working, ensure that the CSS rule is present in the `output.css` file. This will help you determine if the issue is with Tailwind compilation or with Nativewind's runtime.
+
+## Verifying Nativewind Installation
+
+Nativewind provides a utility function `verifyInstallation()` designed to help confirm that the package has been correctly installed.
+
+Import the `verifyInstallation` function from the Nativewind package and run it within the scope of a React component. **Do not invoke this function on the global scope**; it should be run within a component.
+
+```tsx
+import React from 'react';
+import { verifyInstallation } from 'nativewind';
+
+function App() {
+    // Ensure to call inside a component, not globally
+    verifyInstallation();
+
+    return (
+      // Your component JSX here...
+    );
+}
+
+export default App;
+```
+
+## Enabling debug mode
+
+Nativewind supports the `DEBUG` environment variable and will output various debug information while your server is running. **Run this command in your project's root directory where your `package.json` file is located.**
+
+The `<start-command>` should be replaced with your project's actual start command:
+
+- **Expo**: `npx expo start --clear`
+- **Framework-less React Native**: `npx react-native start --reset-cache`
+- **Next.js**: `npm run dev` or `yarn dev`
+- **Other frameworks**: Use your project's standard development start command
+
+<Tabs groupId="Troubleshooting" items={['Mac / Linux', 'Windows']}>
+  <Tab value="Mac / Linux" label="Mac / Linux">
+    ```bash
+    DEBUG=nativewind <start-command>
+    ```
+  </Tab>
+  <Tab value="Windows" label="Windows">
+    ```cmd
+    set "DEBUG=nativewind" && <start-command>
+    ```
+  </Tab>
+</Tabs>
+
+<Callout type="warn">
+@react-native-community/cli may create multiple terminal sessions. You will need to ensure all sessions have `DEBUG=nativewind` set.
+</Callout>
+
+By itself, this information may or may not be useful to you, but it is extremely useful when reporting issues to the developers on GitHub. You can record the terminal output by redirecting the output to a file.
+
+<Tabs groupId="Troubleshooting" items={['Mac / Linux', 'Windows']}>
+  <Tab value="Mac / Linux" label="Mac / Linux">
+    ```bash
+    DEBUG=nativewind script output.log <start-command>
+    ```
+  </Tab>
+  <Tab value="Windows" label="Windows">
+    ```cmd
+    set "DEBUG=nativewind" && script output.log <start-command>
+    ```
+    
+    **Note:** For older Windows versions, use:
+    ```cmd
+    set "DEBUG=nativewind" && <start-command> > output.log 2>output.log
+    ```
+    
+    **For PowerShell:**
+    ```powershell
+    $env:DEBUG="nativewind"; <start-command> *> output.log
+    ```
+  </Tab>
+</Tabs>
+
+## Common Issues
+
+### Your cache is loading old data
+
+Always reset your cache before troubleshooting an issue.
+
+### Colors are not working
+
+React Native styling is much more restrictive than the web. This code will work on the web, but not on React Native:
+
+```tsx title=App.tsx
+export function App() {
+  return (
+    <View className="text-red-500">
+      <Text>Hello, World!</Text>
+    </View>
+  );
+}
+```
+
+The reason is that `<View />` does not accept a `color` style and will not cascade the style! Instead, you must move the color classes to the `<Text />` element.
+
+### Modifiers are not working
+
+Ensure the component you are applying the style to supports both the style and the required props (e.g., `hover:text-white` - does the component support `color` styles and have an `onHover` prop?).
+
+### Explicit styles
+
+React Native has various issues when conditionally applying styles. To prevent these issues, it's best to declare all styles explicitly.
+
+For example, instead of only applying a text color for dark mode, provide both a light and dark mode text color.
+
+### dp vs px
+
+React Native's default unit is density-independent pixels (dp) while the web's default is pixels (px). These two units are different; however, Nativewind treats them as if they are equivalent. Additionally, Nativewind's compiler requires a unit for most numeric values, forcing some styles to use a `px` unit.
+
+### Flex
+
+React Native uses a different base flex definition than the web. This can be fixed by adding `flex-1` to your classes, which forces the platforms to align.
+
+### Flex Direction
+
+React Native uses a different default `flex-direction` than the web. This can be fixed by explicitly setting a `flex-direction`.
+
+# Typescript (/docs/getting-started/typescript)
+
+{/* # Typescript */}
+
+Nativewind extends the React Native types via declaration merging. The simplest method to include the types is to create a new `nativewind-env.d.ts` file and add a [triple-slash directive](https://www.typescriptlang.org/docs/handbook/triple-slash-directives.html) referencing the types.
+
+```tsx
+/// <reference types="nativewind/types" />
+```
+
+<Callout type="warn" title="CAUTION">
+Do not call this file:
+
+- `nativewind.d.ts`
+- The same name as a file or folder in the same directory e.g `app.d.ts` when an `/app` folder exists
+- The same name as a folder in `node_modules`, e.g `react.d.ts`
+
+By doing so, your types will not be picked up by the TypeScript compiler.
+</Callout>
+
+# Writing Custom Components (/docs/guides/custom-components)
+
+{/* # Writing Custom Components */}
+  
+<Callout type="tip">
+This guide is about writing your own components. If you are looking for a guide on how to use Nativewind with third-party components, see the [third-party components](./third-party-components) guide.
+
+Unless you are styling a custom native component, you should never have to use `cssInterop` or `remapProps` when writing your own components. These are only used when working with third-party components.
+</Callout>
+
+## Your first component
+
+Nativewind works by passing class names to components. This is the same pattern as Tailwind CSS, which uses utility classes to style elements.
+
+To create a component with default styles, simply merge the className string.
+
+```tsx
+function MyComponent({ className }) {
+  const defaultStyles = "text-black dark:text-white";
+  return <Text className={`${defaultStyles} ${className}`} />;
+}
+
+<MyComponent className="font-bold" />;
+```
+
+You can expand this pattern to create more complex components. For example, you can create a `Button` component with different variants.
+
+```tsx
+const variantStyles = {
+  default: "rounded",
+  primary: "bg-blue-500 text-white",
+  secondary: "bg-white-500 text-black",
+};
+
+function MyComponent({ variant, className, ...props }) {
+  return (
+    <Text
+      className={`
+        ${variantStyles.default}
+        ${variantStyles[variant]}
+        ${className}
+      `}
+      {...props }
+    />
+  );
+}
+```
+
+Creating your own variants can quickly become complex. We recommend using a class name management library to simplify the process.
+
+- [tailwind-variants](https://www.tailwind-variants.org/)
+- [cva](https://cva.style/docs)
+- [tw-classed](https://tw-classed.vercel.app)
+- [clsx](https://www.npmjs.com/package/clsx)
+- [classnames](https://www.npmjs.com/package/classnames)
+
+## Merging with inline styles
+
+Nativewind will automatically merge with inline-styles. [Read more about style specificity](./../core-concepts/style-specificity) documentation.
+
+```tsx
+<Text className="text-white" style={{ color: "black" }} /> // Will be black
+```
+
+## Handling components with multiple style props
+
+Custom components can have multiple style props. For example, a `Button` component may have an `outerClassName` and an `innerClassName`.
+
+```tsx title=MyComponent.tsx
+function MyComponent({ className, textClassName }) {
+  return (
+    <View className={className}>
+      <Text className={textClassName}>Hello, Nativewind!</Text>
+    </View>
+  );
+}
+```
+
+# Custom Fonts (/docs/guides/custom-fonts)
+
+How to load and use custom fonts with Nativewind v4 and Expo
+
+{/* # Custom Fonts */}
+
+React Native handles fonts differently from the web. There is no `@font-face`, no automatic font discovery, and no fallback font stacks. Every font weight is a separate file, and the file name matters. This guide walks through the full setup.
+
+<Callout type="info">
+  A complete working example is available at [nativewind/custom-fonts-example-v4](https://github.com/nativewind/custom-fonts-example-v4).
+</Callout>
+
+## Prerequisites
+
+- An Expo project with Nativewind v4 installed
+- A custom font you want to use (this guide uses [Inter](https://rsms.me/inter/))
+
+## Step 1: Choose your font files
+
+**Use OTF or TTF format.** OTF files render slightly better and have a smaller file size. Either format works across iOS, Android, and web.
+
+**Variable fonts do not work on React Native.** You must download individual static weight files. For Inter, that means separate files for Regular, Bold, Italic, Medium, etc.
+
+Download the static font files from your font's release page. For Inter, grab the OTF files from the [GitHub releases](https://github.com/rsms/inter/releases).
+
+## Step 2: Name files correctly
+
+Place font files in your project, for example `assets/fonts/`:
+
+```
+assets/
+  fonts/
+    Inter-Regular.otf
+    Inter-Bold.otf
+    Inter-Italic.otf
+    Inter-BoldItalic.otf
+    Inter-Medium.otf
+    Inter-SemiBold.otf
+```
+
+**The file name must match the PostScript name of the font.** iOS uses the PostScript name to look up fonts at runtime. If the names don't match, the font silently fails to load on iOS while appearing to work on Android.
+
+You can check a font's PostScript name by opening it in Font Book (macOS) or using a tool like [fontdrop.info](https://fontdrop.info).
+
+## Step 3: Load fonts with expo-font
+
+The simplest approach is to use the `expo-font` config plugin in `app.json`:
+
+```bash
+bun add expo-font
+```
+
+```json title="app.json"
+{
+  "expo": {
+    "plugins": [
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/Inter-Regular.otf",
+            "./assets/fonts/Inter-Bold.otf",
+            "./assets/fonts/Inter-Italic.otf",
+            "./assets/fonts/Inter-BoldItalic.otf",
+            "./assets/fonts/Inter-Medium.otf",
+            "./assets/fonts/Inter-SemiBold.otf"
+          ]
+        }
+      ]
+    ]
+  }
+}
+```
+
+Alternatively, load fonts at runtime with the `useFonts` hook:
+
+```tsx title="App.tsx"
+import { useFonts } from "expo-font";
+
+export default function App() {
+  const [fontsLoaded] = useFonts({
+    "Inter-Regular": require("./assets/fonts/Inter-Regular.otf"),
+    "Inter-Bold": require("./assets/fonts/Inter-Bold.otf"),
+  });
+
+  if (!fontsLoaded) return null;
+
+  return <>{/* your app */}</>;
+}
+```
+
+The `app.json` approach is preferred because fonts are available immediately without a loading state.
+
+## Step 4: Verify with inline styles
+
+Before touching your Tailwind config, confirm the fonts actually loaded:
+
+```tsx
+<Text style={{ fontFamily: "Inter-Regular" }}>
+  This should render in Inter
+</Text>
+```
+
+If this does not work, the issue is with font loading, not with Nativewind. Check your file names and `app.json` config.
+
+## Step 5: Add to Tailwind config
+
+Map each font to a utility class in `tailwind.config.js`:
+
+```js title="tailwind.config.js"
+module.exports = {
+  content: ["./App.{js,ts,tsx}", "./components/**/*.{js,ts,tsx}"],
+  presets: [require("nativewind/preset")],
+  theme: {
+    extend: {
+      fontFamily: {
+        inter: ["Inter-Regular"],
+        "inter-bold": ["Inter-Bold"],
+        "inter-italic": ["Inter-Italic"],
+        "inter-bold-italic": ["Inter-BoldItalic"],
+        "inter-medium": ["Inter-Medium"],
+        "inter-semibold": ["Inter-SemiBold"],
+      },
+    },
+  },
+  plugins: [],
+};
+```
+
+<Callout type="warn">
+  React Native does not support fallback fonts. If you provide an array with multiple fonts, only the first one is used.
+</Callout>
+
+## Step 6: Use in components
+
+```tsx
+<Text className="font-inter">Regular text</Text>
+<Text className="font-inter-bold">Bold text</Text>
+<Text className="font-inter-medium">Medium text</Text>
+<Text className="font-inter-semibold">SemiBold text</Text>
+<Text className="font-inter-italic">Italic text</Text>
+```
+
+## Common pitfalls
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| Font works on Android but not iOS | File name doesn't match PostScript name | Rename the file to match exactly |
+| Font doesn't render at all | Font not loaded by expo-font | Check `app.json` plugin config or `useFonts` hook |
+| Using `font-bold` doesn't make Inter bold | `font-bold` sets `fontWeight`, not `fontFamily` | Use `font-inter-bold` to set the bold font family |
+| Variable font doesn't work | React Native doesn't support variable fonts | Download static weight files instead |
+| Font renders as system default | PostScript name mismatch | Open font in Font Book and verify the PostScript name |
+
+## Platform-specific fonts
+
+If you need different fonts per platform, use the `platformSelect` helper:
+
+```js title="tailwind.config.js"
+const { platformSelect } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      fontFamily: {
+        heading: platformSelect({
+          ios: "Inter-Bold",
+          android: "Inter-Bold",
+          default: "ui-sans-serif",
+        }),
+      },
+    },
+  },
+};
+```
+
+# Other Bundlers (/docs/guides/other-bundlers)
+
+{/* Other Bundlers */}
+
+Nativewind officially supports Metro bundler, which is the default bundler for React Native. We also provide installation instructions for Next.js (which uses Webpack and Turbopack) as it's a popular choice for React Native Web applications.
+
+To use Nativewind with any bundler, three key conditions must be met:
+
+1. Tailwind CSS is setup with the Nativewind preset
+2. React Native is setup and you are using React Native Web >=0.19
+3. The JSX runtime is changed to `'automatic'` and `jsxImportSource` set to `'nativewind'`
+
+## Alternative Bundlers
+
+While Nativewind officially supports Metro, there are community-driven solutions for using Nativewind with other bundlers:
+
+### OneJS
+[OneJS](https://onestack.dev/) provides a starter template for using Nativewind with Vite. This integration is currently in alpha, and the team welcomes feedback and contributions.
+
+### Re.Pack
+[Re.Pack](https://github.com/callstack/repack) by Callstack is a Webpack-based toolkit for building React Native applications. It provides an alternative to Metro bundler and can be configured to work with Nativewind.
+
+For more information about troubleshooting Nativewind setup, please refer to our [Troubleshooting Guide](/docs/getting-started/troubleshooting).
+
+# Themes (/docs/guides/themes)
+
+{/* # Themes */}
+
+As Nativewind uses Tailwind CLI, it supports all the theming options Tailwind CSS does. Read the Tailwind CSS docs on each className to learn more about the possible theming values.
+
+## Dynamic themes
+
+To transition from a static theme to a dynamic one in Nativewind, utilize [CSS Variables as colors](https://tailwindcss.com/docs/customizing-colors#using-css-variables). This approach ensures flexibility and adaptability in theme application, catering to user preferences.
+
+```js title="tailwind.config.js"
+module.exports = {
+  theme: {
+    colors: {
+      // Create a custom color that uses a CSS custom value
+      primary: "rgb(var(--color-values) / <alpha-value>)",
+    },
+  },
+  plugins: [
+    // Set a default value on the `:root` element
+    ({ addBase }) =>
+      addBase({
+        ":root": {
+          "--color-values": "255 0 0",
+          "--color-rgb": "rgb(255 0 0)",
+        },
+      }),
+  ],
+};
+```
+
+```tsx title="App.tsx"
+import { vars } from 'nativewind'
+
+const userTheme = vars({
+  '--color-values': '0 255 0',
+  '--color-rgb': 'rbg(0 0 255)'
+});
+
+export default App() {
+  return (
+    <View>
+      <Text className="text-primary">Access as a theme value</Text>
+      <Text className="text-[--color-rgb]">Or the variable directly</Text>
+
+      {/* Variables can be changed inline */}
+      <View style={userTheme}>
+        <Text className="text-primary">I am now green!</Text>
+        <Text className="text-[--color-rgb]">I am now blue!</Text>
+      </View>
+    </View>
+  )
+}
+```
+
+## Switching themes
+
+Nativewind is unopinionated on how you implement your theming. This is an example implementation that supports two themes with both a light/dark mode.
+
+```tsx title="App.jsx"
+import { vars, useColorScheme } from 'nativewind'
+
+const themes = {
+  brand: {
+    'light': vars({
+      '--color-primary': 'black',
+      '--color-secondary': 'white'
+    }),
+    'dark': vars({
+      '--color-primary': 'white',
+      '--color-secondary': 'dark'
+    })
+  },
+  christmas: {
+    'light': vars({
+      '--color-primary': 'red',
+      '--color-secondary': 'green'
+    }),
+    'dark': vars({
+      '--color-primary': 'green',
+      '--color-secondary': 'red'
+    })
+  }
+}
+
+function Theme(props) {
+  const { colorScheme } = useColorScheme()
+  return (
+    <View style={themes[props.name][colorScheme]}>
+      {props.children}
+    </View>
+  )
+}
+
+export default App() {
+  return (
+    <Theme name="brand">
+      <View className="text-primary">{/* rgba(0, 0, 0, 1) */}>
+      <Theme name="christmas">
+        <View className="text-primary">{/* rgba(255, 0, 0, 1) */}>
+      </Theme>
+    </Theme>
+  )
+}
+```
+
+## Retrieving theme values
+
+### Accessing default colors
+
+If you need the default color values at runtime, you can import them directly from `tailwindcss`
+
+retrieve them directly from `tailwindcss/colors`
+
+```tsx
+import colors from "tailwindcss/colors";
+
+export function MyActivityIndicator(props) {
+  return <ActivityIndicator size="small" color={colors.blue.500} {...props} />;
+}
+```
+
+### Access theme values
+
+If you use custom theme values, extract them to a file that is shared with your code and your `tailwind.config.js`. [Please read the Tailwind CSS documentation for more information](https://tailwindcss.com/docs/configuration#referencing-in-java-script).
+
+```tsx title="colors.ts"
+module.exports = {
+  tahiti: {
+    100: "#cffafe",
+    200: "#a5f3fc",
+    300: "#67e8f9",
+    400: "#22d3ee",
+    500: "#06b6d4",
+    600: "#0891b2",
+    700: "#0e7490",
+    800: "#155e75",
+    900: "#164e63",
+  },
+};
+```
+
+```ts title="tailwind.config.js"
+const colors = require("./colors");
+
+module.exports = {
+  theme: {
+    extend: {
+      colors,
+    },
+  },
+};
+```
+
+```tsx title="MyActivityIndicator.js"
+import colors from "./colors";
+
+export function MyActivityIndicator(props) {
+  return <ActivityIndicator color={colors.tahiti.500} {...props} />;
+}
+```
+
+## Platform specific theming
+
+### platformSelect
+
+platformSelect is the equivalent to [`Platform.select()`](https://reactnative.dev/docs/platform#select)
+
+```js title="tailwind.config.js"
+const { platformSelect } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        error: platformSelect({
+          ios: "red",
+          android: "blue",
+          default: "green",
+        }),
+      },
+    },
+  },
+};
+```
+
+### platformColor()
+
+Equivalent of [`PlatformColor`](https://reactnative.dev/docs/platformcolor). Typically used with `platformSelect`.
+
+```ts title="tailwind.config.js"
+const { platformColor } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        platformRed: platformSelect({
+          android: platformColor("systemRed"),
+          web: "red",
+        }),
+      },
+    },
+  },
+};
+```
+
+## Device specific theming
+
+### hairlineWidth()
+
+Equivalent of [`StyleSheet.hairlineWidth`](https://reactnative.dev/docs/stylesheet#hairlinewidth)
+
+```ts title="tailwind.config.js"
+const { hairlineWidth } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      borderWidth: {
+        hairline: hairlineWidth(),
+      },
+    },
+  },
+};
+```
+
+### pixelRatio()
+
+Equivalent of [`PixelRatio.get()`](https://reactnative.dev/docs/pixelratio#get). If a number is provided it returns `PixelRatio.get() * <value>`, otherwise it returns the PixelRatio value.
+
+```ts title="tailwind.config.js"
+const { pixelRatio } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      borderWidth: {
+        number: pixelRatio(2),
+      },
+    },
+  },
+};
+```
+
+### pixelRatioSelect()
+
+A helper function to use [`PixelRatio.get()`](https://reactnative.dev/docs/pixelratio#get) in a conditional statement, similar to `Platform.select`.
+
+```ts title="tailwind.config.js"
+const { pixelRatio, hairlineWidth } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      borderWidth: pixelRatioSelect({
+        2: 1,
+        default: hairlineWidth(),
+      }),
+    },
+  },
+};
+```
+
+### fontScale()
+
+Equivalent of [`PixelRatio.getFontScale()`](https://reactnative.dev/docs/pixelratio#getFontScale). If a number is provided it returns `PixelRatio.getFontScale() * <value>`, otherwise it returns the `PixelRatio.getFontScale()` value.
+
+```ts title="tailwind.config.js"
+const { fontScale } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      fontSize: {
+        custom: fontScale(2),
+      },
+    },
+  },
+};
+```
+
+### fontScaleSelect()
+
+A helper function to use [`PixelRatio.getFontScale()`](https://reactnative.dev/docs/pixelratio#getFontScale) in a conditional statement, similar to `Platform.select`.
+
+```ts title="tailwind.config.js"
+const { fontScaleSelect, hairlineWidth } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      fontSize: {
+        custom: fontScaleSelect({
+          2: 14,
+          default: 16,
+        }),
+      },
+    },
+  },
+};
+```
+
+### getPixelSizeForLayoutSize()
+
+Equivalent of `PixelRatio.getPixelSizeForLayoutSize()`
+
+```js title=tailwind.config.js
+const { getPixelSizeForLayoutSize } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      size: {
+        custom: getPixelSizeForLayoutSize(2),
+      },
+    },
+  },
+};
+```
+
+### roundToNearestPixel()
+
+Equivalent of `PixelRatio.roundToNearestPixel()`
+
+```ts title=tailwind.config.js
+const { roundToNearestPixel } = require("nativewind/theme");
+
+module.exports = {
+  theme: {
+    extend: {
+      size: {
+        custom: roundToNearestPixel(8.4)
+      },
+    },
+  },
+});
+```
+
+# Styling Third-Party Components (/docs/guides/third-party-components)
+
+{/* # Styling third-party components */}
+
+A third-party component is a component that is a dependency of your application and not a core React Native component. Nativewind works by passing the `className` prop to the core React Native components. Unfortunately, its not always obvious what third-party components implement this behavior without checking their source code.
+
+This is an example of a 3rd party component that does not pass the `className` prop down:
+
+```tsx
+// ❌ This component will not work with Nativewind
+// This component is 'picking' the props.
+// Any props that are not explicitly defined will not be passed down
+function ThirdPartyComponent({ style }) {
+  return <View style={style} />;
+}
+
+// ✅ This component will work with Nativewind
+function ThirdPartyComponent({ style, ...props }) {
+  return <View style={style} {...props} />;
+}
+```
+
+## Improving 3rd party components
+
+If you encounter a 3rd party component 'picks' its props, you should consider submitting a pull request to modify the component so it passes all props down. Components that 'pick' their props can be very limiting, and not just for Nativewind! React Native often adds new APIs and 'picking' props prevents you from using these new features.
+
+```tsx
+function ThirdPartyComponent({ style }) {
+  return <View style={style} />;
+}
+
+// aria-label was added in 0.71, but this component will not work with it!
+<ThirdPartyComponent aria-label="My Label" />;
+```
+
+## Handling components with multiple style props
+
+Some components will pass the `className` prop down, but they may also have multiple style props. For example, React Native's `<FlatList />` component has a `style` and `contentContainerStyle` prop. The `remapProps` function can be used to create new `className` props for these components.
+
+```tsx
+// This component has two 'style' props
+function ThirdPartyComponent({ style, contentContainerStyle, ...props }) {
+  return (
+    <FlatList
+      style={style}
+      contentContainerStyle={contentContainerStyle}
+      {...props}
+    />
+  );
+}
+
+// Call this once at the entry point of your app
+remapProps(ThirdPartyComponent, {
+  className: "style",
+  contentContainerClassName: "contentContainerStyle",
+});
+
+// Now you can use the component with Nativewind
+<ThirdPartyComponent className="p-5" contentContainerClassName="p-2" />;
+```
+
+<Callout type="tip">
+Nativewind's style objects are more complex than the objected created `StyleSheet.create`. To not break third-party components, `remapProps` will pass a special object to the target prop. To the third-party component this will appear as an empty object.
+</Callout>
+
+## Handling components with style attribute props
+
+Some components may require style attributes to be passed as props (for example, React Native's `<StatusBar />` component accepts a `backgroundColor` prop), or they may access the `style` prop directly.
+
+```tsx
+/*
+ * This component will not work as expected with Nativewind
+ *   - borderColor will not work as it is a prop
+ *   - backgroundColor will not work as it is based on the style.color value
+ */
+function ThirdPartyComponent({ borderColor, style, ...props }) {
+  // The background color is based on the style prop
+  const backgroundColor = style.color === "white" ? "black" : "white";
+  return (
+    <View
+      style={{
+        ...style,
+        borderColor,
+        backgroundColor,
+      }}
+    />
+  );
+}
+```
+
+To support these components, you can use the [`cssInterop`](./../api/css-interop) function. You can think of `cssInterop` as a "className termination". It a marker that Nativewind needs to convert the `className` props into style objects.
+
+<Callout type="warn" title="CAUTION">
+Enabling the `cssInterop` for a component comes at a performance cost. Nativewind will need to resolve the styles, add event handlers, inject context, etc.
+</Callout>
+
+## Handling multiple props with similar properties
+
+Sometimes a component will have multiple props that are similar.
+
+```tsx
+function ThirdPartyComponent({ labelColor, inputColor, ...props }) {
+  return (
+    <>
+      <Text style={color: labelColor}>Label</Text>
+      <TextInput style={color: labelColor} />
+    </>
+  );
+}
+```
+
+You could creating a new mapping for each props, but it can be cumbersome to manage multiple props with className management libraries
+
+```tsx
+// This is possible
+cssInterop(ThirdPartyComponent, {
+  labelColorClassName: {
+    target: false
+    nativeStyleToProps: { color: 'labelColor' }
+  }
+  inputColorClassName: {
+    target: false
+    nativeStyleToProps: { color: 'inputColor' }
+  }
+})
+
+function Wrapper() {
+  // Need to create a new className for each prop
+  const labelStyle = cva('color-black')
+  const inputStyle = cva('color-black')
+
+  return (
+    <ThirdPartyComponent
+      labelColorClassName={labelStyle}
+      inputColorClassName={inputStyle}
+    />
+  )
+}
+```
+
+Instead, you can use the dynamic mapping modifier to move props.
+
+```tsx
+cssInterop(ThirdPartyComponent, {
+  className: "style",
+});
+
+function Wrapper() {
+  // Need to create a new className for each prop
+  const style = cva("{}-[inputColor]:color-black {}-[labelColor]:color-black");
+
+  return <ThirdPartyComponent className={style} />;
+}
+```
+
+## Dynamic mapping modifier
+
+The dynamic mapping modifier allows you to move props from one prop to another. This is useful when you have multiple props that are similar, or you want to manage the styles in a single prop.
+
+There are two ways to use the dynamic mapping modifier:
+
+- `{}-[<propName>]`: This will move the values the style to the `propName` prop. If a className sets multiple properties, the last property will be used.
+- `{}-[<propName>]:style-property`: This will move the `propName` prop to the `style-property` of the `className` prop, but only for the specified `style-property`
+
+Both `propName` and `style-property` can be written using dot notation to access nested properties.
+
+```tsx
+//This class
+{}-[screenOptions.tabBarTintColor]/color:color-red-500
+// Will output
+{ screenOptions: { tabBarTintColor: 'color-red-500' } }
+```
+
+## TypeScript
+
+Both `remapProps` and `cssInterop` will return a typed version of your component. However, you can globally defined the types in a new declaration file.
+
+```tsx title=custom-components-env.d.ts
+declare module "<3rd party package>" {
+  interface 3rdPartyComponentProps {
+    customClassName?: string;
+  }
+}
+```
+
+**Example**
+
+Setting global types requires in-depth knowledge of TypeScript. Your interface declaration needs to **exactly match** the 3rd party declaration (including `extends` and generics).
+
+For example, Nativewind uses the follow types for React Native's `<FlatList />`, which uses multiple interfaces for its props, across multiple packages.
+
+```tsx title=custom-components-env.d.ts
+import {
+  ScrollViewProps,
+  ScrollViewPropsAndroid,
+  ScrollViewPropsIOS,
+  Touchable,
+  VirtualizedListProps,
+} from "react-native";
+
+declare module "@react-native/virtualized-lists" {
+  export interface VirtualizedListWithoutRenderItemProps<ItemT>
+    extends ScrollViewProps {
+    ListFooterComponentClassName?: string;
+    ListHeaderComponentClassName?: string;
+  }
+}
+
+declare module "react-native" {
+  interface ScrollViewProps
+    extends ViewProps,
+      ScrollViewPropsIOS,
+      ScrollViewPropsAndroid,
+      Touchable {
+    contentContainerClassName?: string;
+    indicatorClassName?: string;
+  }
+  interface FlatListProps<ItemT> extends VirtualizedListProps<ItemT> {
+    columnWrapperClassName?: string;
+  }
+  interface ViewProps {
+    className?: string;
+  }
+}
+```
+
+# Using with Monorepos (/docs/guides/using-with-monorepos)
+
+Learn how to set up Nativewind in monorepo environments like NX
+
+{/* # Using with Monorepos */}
+
+Nativewind can be used in an Nx Monorepo that is already configured to use Expo and the corresponding plugin [@nx/expo](https://nx.dev/nx-api/expo)
+
+## NX Monorepo Setup
+
+When working with Nativewind in an NX monorepo, there are some specific configurations needed to ensure proper integration. The main challenge is correctly configuring the Metro bundler to work with both NX and Nativewind.
+
+### Prerequisites
+
+Simply configure your Expo project in Nx as per [the Expo setup guide](../getting-started/installation)
+
+> Skip the `metro.config.js` setup as we will address this part here.
+
+### Modify your metro.config.js
+
+Add the Nativewind plugin to your `metro.config.js` using a promise chain as shown below:
+
+```js title="metro.config.js"
+const { withNativeWind } = require("nativewind/metro");
+
+// ... existing Nx configuration
+
+module.exports = withNxMetro(mergeConfig(defaultConfig, customConfig), {
+  // ... existing Nx config
+}).then((config) => withNativeWind(config, { input: "./global.css" }));
+```
+
+## Additional Resources
+
+For more complex monorepo setups or specific issues, refer to:
+
+- [NX documentation for React Native](https://nx.dev/recipes/react/react-native)
+- [NX documentation for Expo](https://nx.dev/nx-api/expo)
+- [Expo documentation for monorepos](https://docs.expo.dev/guides/monorepos/)
+
+# Compatibility with Comments (/docs/tailwind/_compatibility-with-comments)
+
+import Legend from "./_legend.mdx";
+
+<table>
+  <tbody>
+    <tr>
+      <th className="whitespace-nowrap">Class</th>
+      <th>Support</th>
+      <th>Comments</th>
+    </tr>
+    {(props.supported || []).map((value, index) => (
+      <tr key={`supported-${index}`}>
+        <td className="whitespace-nowrap">
+          <pre>
+            <code>{value[0]}</code>
+          </pre>
+        </td>
+        <td className="whitespace-nowrap">✅ Full Support</td>
+        <td>{value[1]}</td>
+      </tr>
+    ))}
+    {(props.experimental || []).map((value, index) => (
+      <tr key={`supported-${index}`}>
+        <td className="whitespace-nowrap">
+          <pre>
+            <code>{value[0]}</code>
+          </pre>
+        </td>
+        <td>🧪 Experimental Support</td>
+        <td>{value[1]}</td>
+      </tr>
+    ))}
+    {(props.native || []).map((value, index) => (
+      <tr key={`supported-${index}`}>
+        <td className="whitespace-nowrap">
+          <pre>
+            <code>{value[0]}</code>
+          </pre>
+        </td>
+        <td>📱 Native only</td>
+        <td>{value[1]}</td>
+      </tr>
+    ))}
+    {(props.partial || []).map((value, index) => (
+      <tr key={`partial-${index}`}>
+        <td className="whitespace-nowrap">
+          <pre>
+            <code>{value[0]}</code>
+          </pre>
+        </td>
+        <td>✔️ Partial Support</td>
+        <td>{value[1]}</td>
+      </tr>
+    ))}
+    {(props.none || []).map((value, index) => (
+      <tr key={`partial-${index}`}>
+        <td className="whitespace-nowrap">
+          <pre>
+            <code>{value[0]}</code>
+          </pre>
+        </td>
+        <td>🌐 Web only</td>
+        <td>{value[1]}</td>
+      </tr>
+    ))}
+  </tbody>
+</table>
+
+<>{props.legend || props.legend === undefined ? <Legend /> : <></>}</>
+
+# _compatibility.mdx (/docs/tailwind/_compatibility)
+
+import Legend from "./_legend.mdx";
+
+<table>
+  <tbody>
+    <tr>
+      <th className="w-[40%] whitespace-nowrap">Class</th>
+      <th>Support</th>
+    </tr>
+    {(props.supported || []).map((value, index) => (
+      <tr key={`supported-${index}`}>
+        <td>
+          <pre>
+            <code>{value}</code>
+          </pre>
+        </td>
+        <td>✅ Full Support</td>
+      </tr>
+    ))}
+    {(props.experimental || []).map((value, index) => (
+      <tr key={`supported-${index}`}>
+        <td>
+          <pre>
+            <code>{value}</code>
+          </pre>
+        </td>
+        <td>🧪 Experimental Support</td>
+      </tr>
+    ))}
+    {(props.native || []).map((value, index) => (
+      <tr key={`supported-${index}`}>
+        <td>
+          <pre>
+            <code>{value}</code>
+          </pre>
+        </td>
+        <td>📱 Native only</td>
+      </tr>
+    ))}
+    {(props.partial || []).map((value, index) => (
+      <tr key={`partial-${index}`}>
+        <td>
+          <pre>
+            <code>{value}</code>
+          </pre>
+        </td>
+        <td>✔️ Partial Support</td>
+      </tr>
+    ))}
+    {(props.none || []).map((value, index) => (
+      <tr key={`partial-${index}`}>
+        <td>
+          <pre>
+            <code>{value}</code>
+          </pre>
+        </td>
+        <td>🌐 Web only</td>
+      </tr>
+    ))}
+  </tbody>
+</table>
+
+<>{props.legend || props.legend === undefined ? <Legend /> : <></>}</>
+
+# _legend.mdx (/docs/tailwind/_legend)
+
+<details className="bg-fd-primary/20 border-fd-primary border rounded-xl p-4 text-fd-foreground cursor-pointer max-w-full w-[500px]">
+  <summary>Legend</summary>
+
+### Class
+
+`-{n}` Supports values from theme
+
+`-[n]` Supports arbitrary values
+
+### Icon
+
+✅ Full support
+
+✔️ Partial support on native
+
+🧪 Experimental support on native
+
+📱 Native only
+
+🌐 Web only
+
+</details>
+
+# _rn-svg helper (/docs/tailwind/_rn-svg)
+
+import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
+
+React Native does not have SVG components but universal SVG support can be achieved with 3rd party libraries such as [react-native-svg](https://github.com/react-native-svg/react-native-svg). While these docs use `react-native-svg`, the concept applies to all libraries.
+
+You will need to `cssInterop()` on these components to properly style them for native.
+
+<details className="bg-fd-primary/20 border-fd-primary border rounded-xl p-4 text-fd-foreground cursor-pointer">
+  <summary>Example usage</summary>
+<CodeBlock>
+```tsx title=App.js
+import React from 'react';
+import { View, StyleSheet } from 'react-native';
+import Svg, { Circle, Rect } from 'react-native-svg';
+import { cssInterop } from 'nativewind'
+
+cssInterop(Svg, {
+  className: {
+    target: "style",
+    nativeStyleToProp: { width: true, height: true }
+  },
+});
+cssInterop(Circle, {
+  className: {
+    target: "style",
+    nativeStyleToProp: { width: true, height: true, stroke: true, strokeWidth: true, fill: true }
+  },
+});
+cssInterop(Rect, {
+  className: {
+    target: "style",
+    nativeStyleToProp: { width: true, height: true, stroke: true, strokeWidth: true, fill: true }
+  },
+});
+
+export function SvgExample () {
+  return (
+    <View className="inset-0 items-center content-center">
+      <Svg className="h-1/2 w-1/2" viewBox="0 0 100 100" >
+        <Circle cx="50" cy="50" r="45" className="stroke-blue-500 stroke-2 fill-green-500" />
+        <Rect x="15" y="15" className="w-16 h-16 stroke-red-500 stroke-2 fill-yellow-500" />
+      </Svg>
+    </View>
+  );
+}
+```
+</CodeBlock>
+</details>
+
+# _tw-docs.mdx (/docs/tailwind/_tw-docs)
+
+<a target="_blank" href={props.href}>
+  <img src="/tw.svg" width={20} className="inline-block h-full m-0 ml-1 align-middle" />
+</a>
+
+# Additional Setup Guides (/docs/getting-started/installation/_additional-guides)
+
+## Additional Setup Guides
+
+- [Editor Setup](./editor-setup) - Learn how to set up your editor to use Nativewind
+- [Other Bundlers](/docs/guides/other-bundlers) - Learn how to use Nativewind with other bundlers
+
+# Import CSS (/docs/getting-started/installation/_import-css)
+
+### 5. Import your CSS file
+
+```js title="App.js"
+import "./global.css"
+
+export default App() {
+  /* Your App */
+}
+```
+
+# _install helper (/docs/getting-started/installation/_install)
+
+import NPM from './_npm.mdx';
+
+You will need to install `nativewind` and its peer dependencies `tailwindcss`, `react-native-reanimated` and `react-native-safe-area-context`.
+
+<NPM
+  framework={props.framework}
+  deps={[
+    "nativewind",
+    "react-native-reanimated",
+    "react-native-safe-area-context",
+  ]}
+  devDeps={[
+    "tailwindcss@^3.4.17",
+    "prettier-plugin-tailwindcss@^0.5.11",
+    ...(props.framework === 'expo' ? ["babel-preset-expo"] : []),
+  ]}
+/>
+
+# _npm helper (/docs/getting-started/installation/_npm)
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
+
+<Tabs groupId="npm-install" items={["npm", "yarn", "pnpm", "bun", props.framework === 'expo' ? "expo" : undefined]}>
+  <Tab value="npm">
+    <CodeBlock language="bash">
+      <Pre>
+        {[
+          props.deps?.length ? `npm install ${props.deps.join(" ")}` : undefined,
+          props.devDeps?.length
+            ? `npm install --dev ${props.devDeps.join(" ")}`
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join("\n")}
+      </Pre>
+    </CodeBlock>
+  </Tab>
+  <Tab value="yarn">
+    <CodeBlock language="bash">
+      <Pre>
+        {[
+          props.deps?.length ? `yarn add ${props.deps.join(" ")}` : undefined,
+          props.devDeps?.length
+            ? `yarn add --dev ${props.devDeps.join(" ")}`
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join("\n")}
+      </Pre>
+    </CodeBlock>
+  </Tab>
+  <Tab value="pnpm">
+    <CodeBlock language="bash">
+      <Pre>
+        {[
+          props.deps?.length ? `pnpm add ${props.deps.join(" ")}` : undefined,
+          props.devDeps?.length
+            ? `pnpm add --save-dev ${props.devDeps.join(" ")}`
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join("\n")}
+      </Pre>
+    </CodeBlock>
+  </Tab>
+  <Tab value="bun">
+    <CodeBlock language="bash">
+      <Pre>
+        {[
+          props.deps?.length ? `bun install ${props.deps.join(" ")}` : undefined,
+          props.devDeps?.length
+            ? `bun install --dev ${props.devDeps.join(" ")}`
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join("\n")}
+      </Pre>
+    </CodeBlock>
+  </Tab>
+  {props.framework === 'expo' && (
+    <Tab value="expo" label="Expo">
+      <CodeBlock language="bash">
+        <Pre>
+          {[
+            props.deps?.length ? `npx expo install ${props.deps.join(" ")}` : undefined,
+            props.devDeps?.length
+              ? `npx expo install --dev ${props.devDeps.join(" ")}`
+              : undefined,
+          ]
+            .filter(Boolean)
+            .join("\n")}
+        </Pre>
+      </CodeBlock>
+    </Tab>
+  )}
+</Tabs>
+
+# _rn-new command helper (/docs/getting-started/installation/_rn-new-command)
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
+
+<Tabs groupId="npm-install" items={["npm", "yarn", "pnpm", "bun"]}>
+  <Tab value="npm">
+    <CodeBlock language="bash">
+      <Pre>npx rn-new --nativewind</Pre>
+    </CodeBlock>
+  </Tab>
+  <Tab value="yarn">
+    <CodeBlock language="bash">
+      <Pre>npx rn-new --nativewind --yarn</Pre>
+    </CodeBlock>
+  </Tab>
+  <Tab value="pnpm">
+    <CodeBlock language="bash">
+      <Pre>pnpx rn-new --nativewind</Pre>
+    </CodeBlock>
+  </Tab>
+  <Tab value="bun">
+    <CodeBlock language="bash">
+      <Pre>bunx rn-new --nativewind</Pre>
+    </CodeBlock>
+  </Tab>
+</Tabs>
+
+# _tailwind helper (/docs/getting-started/installation/_tailwind)
+
+### 2. Setup Tailwind CSS
+Run `npx tailwindcss init` to create a `tailwind.config.js` file
+
+Add the paths to all of your component files in your tailwind.config.js file.
+
+```js title="tailwind.config.js"
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  // NOTE: Update this to include the paths to all files that contain Nativewind classes.
+  content: ["./App.tsx", "./components/**/*.{js,jsx,ts,tsx}"],
+  presets: [require("nativewind/preset")],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+```
+
+Create a CSS file and add the Tailwind directives.
+
+```css title="global.css"
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+```
+
+> From here onwards, replace `./global.css` with the relative path to the CSS file you just created.
+
+# Try it out (/docs/getting-started/installation/_try-it-out)
+
+## Try it out!
+
+Create a simple component to test your Nativewind setup:
+
+```tsx title="App.tsx"
+import "./global.css"
+import { Text, View } from "react-native";
+
+export default function App() {
+  return (
+    <View className="flex-1 items-center justify-center bg-white">
+      <Text className="text-xl font-bold text-blue-500">
+        Welcome to Nativewind!
+      </Text>
+    </View>
+  );
+}
+```
+
+This example shows:
+- Using `className` prop to style components
+- Tailwind utility classes like `flex-1`, `items-center`, `justify-center`
+- Color utilities like `bg-white`, `text-blue-500`
+- Typography utilities like `text-xl`, `font-bold`
+
+If you see the styled text centered on a white background, Nativewind is working correctly!
+
+# TypeScript Setup (/docs/getting-started/installation/_typescript)
+
+If you're using TypeScript in your project, you'll need to set up the type definitions. Nativewind extends the React Native types via declaration merging. The simplest method to include the types is to create a new `nativewind-env.d.ts` file and add a [triple-slash directive](https://www.typescriptlang.org/docs/handbook/triple-slash-directives.html) referencing the types.
+
+```tsx
+/// <reference types="nativewind/types" />
+```
+
+<Callout type="warn" title="CAUTION">
+Do not call this file:
+
+- `nativewind.d.ts`
+- The same name as a file or folder in the same directory e.g `app.d.ts` when an `/app` folder exists
+- The same name as a folder in `node_modules`, e.g `react.d.ts`
+
+By doing so, your types will not be picked up by the TypeScript compiler.
+</Callout>
+
+# Installation (/docs/getting-started/installation/frameworkless)
+
+import Install from './_install.mdx';
+
+{/* # Installation */}
+
+> Nativewind works with both Expo and framework-less React Native projects but Expo provides a more streamlined experience.
+> 
+> **Web**: If you'd like to use Metro to bundle for a website or App Clip and you are **not** using Expo, you will need either Expo's Metro config `@expo/metro-config` or to manually use Tailwind CLI to generate a CSS file.
+
+
+<a href="./" className="decoration-transparent hover:decoration-fd-foreground opacity-70 hover:opacity-100 underline-offset-8 rounded-lg p-4">Expo</a> 
+| <a href="./frameworkless" className="underline underline-offset-8 text-fd-primary hover:opacity-100 p-4">Framework-less</a> 
+| <a href="./nextjs" className="decoration-transparent hover:decoration-fd-foreground opacity-70 hover:opacity-100 underline-offset-8 rounded-lg p-4">Next.js</a>
+
+Before installing Nativewind, you will need to [initialize your project with the React Native Community CLI](https://reactnative.dev/docs/getting-started-without-a-framework).
+
+## Installation with Framework-less React Native
+
+### 1. Install Nativewind
+
+<Install framework="framework-less" />
+
+Run `pod-install` to finish installation of `react-native-reanimated`
+
+```bash
+npx pod-install
+```
+
+<include>./_tailwind.mdx</include>
+
+### 3. Add the Babel preset
+
+```diff title="babel.config.js"
+module.exports = {
+- presets: ['<existing presets>'],
++ presets: ['<existing presets>', 'nativewind/babel'],
+};
+```
+
+### 4. Modify your metro.config.js
+
+Create a `metro.config.js` file in the root of your project if you don't already have one, then add the following configuration:
+
+```js title="metro.config.js"
+const { getDefaultConfig, mergeConfig } = require("@react-native/metro-config");
+const { withNativeWind } = require("nativewind/metro");
+
+const config = mergeConfig(getDefaultConfig(__dirname), {
+  /* your config */
+});
+
+module.exports = withNativeWind(config, { input: "./global.css" });
+```
+
+<include>./_import-css.mdx</include>
+
+### 6. TypeScript setup (optional)
+
+<include>./_typescript.mdx</include>
+
+<include>./_try-it-out.mdx</include>
+
+<include>./_additional-guides.mdx</include>
+
+# Installation (/docs/getting-started/installation)
+
+import Install from './_install.mdx';
+import RnNewCommand from './_rn-new-command.mdx';
+
+{/* # Installation */}
+
+> Nativewind works with both Expo and framework-less React Native projects but Expo provides a more streamlined experience.
+> 
+> **Web**: If you'd like to use Metro to bundle for a website or App Clip and you are **not** using Expo, you will need either Expo's Metro config `@expo/metro-config` or to manually use Tailwind CLI to generate a CSS file.
+
+<a href="./installation/" className="underline underline-offset-8 text-fd-primary hover:opacity-100 p-4">Expo</a> 
+| <a href="./installation/frameworkless" className="decoration-transparent hover:decoration-fd-foreground opacity-70 hover:opacity-100 underline-offset-8 rounded-lg p-4">Framework-less</a> 
+| <a href="./installation/nextjs" className="decoration-transparent hover:decoration-fd-foreground opacity-70 hover:opacity-100 underline-offset-8 rounded-lg p-4">Next.js</a>
+
+<Callout type="tip">
+ If you'd like to skip manual setup and use Nativewind with Expo, you can use the following command to initialize a new Expo project with Nativewind and Tailwind CSS.
+
+<RnNewCommand />
+</Callout>
+
+## Installation with Expo
+
+### 1. Install Nativewind
+
+<Install framework="expo" />
+
+<include>./_tailwind.mdx</include>
+
+### 3. Add the Babel preset
+
+```js title="babel.config.js"
+module.exports = function (api) {
+  api.cache(true);
+  return {
+    presets: [
+      ["babel-preset-expo", { jsxImportSource: "nativewind" }],
+      "nativewind/babel",
+    ],
+  };
+};
+```
+
+### 4. Create or modify your metro.config.js
+
+Create a `metro.config.js` file in the root of your project if you don't already have one, then add the following configuration:
+
+```js title="metro.config.js"
+const { getDefaultConfig } = require("expo/metro-config");
+const { withNativeWind } = require('nativewind/metro');
+
+const config = getDefaultConfig(__dirname)
+
+module.exports = withNativeWind(config, { input: './global.css' })
+```
+
+<include>./_import-css.mdx</include>
+
+### 6. Modify your `app.json`
+
+Switch the bundler to use the [Metro bundler](https://docs.expo.dev/guides/customizing-metro/#web-support)
+
+```js
+{
+  "expo": {
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
+```
+
+### 7. TypeScript setup (optional)
+
+<include>./_typescript.mdx</include>
+
+<include>./_try-it-out.mdx</include>
+
+<include>./_additional-guides.mdx</include>
+
+# Installation (/docs/getting-started/installation/nextjs)
+
+{/* # Installation */}
+
+> Nativewind works with both Expo and framework-less React Native projects but Expo provides a more streamlined experience.
+> 
+> **Web**: If you'd like to use Metro to bundle for a website or App Clip and you are **not** using Expo, you will need either Expo's Metro config `@expo/metro-config` or to manually use Tailwind CLI to generate a CSS file.
+
+
+<a href="./" className="decoration-transparent hover:decoration-fd-foreground opacity-70 hover:opacity-100 underline-offset-8 rounded-lg p-4">Expo</a> 
+| <a href="./frameworkless" className="decoration-transparent hover:decoration-fd-foreground opacity-70 hover:opacity-100 underline-offset-8 rounded-lg p-4">Framework-less</a> 
+| <a href="./nextjs" className="underline underline-offset-8 text-fd-primary hover:opacity-100 p-4">Next.js</a>
+
+## Installation with Next.js
+
+Nativewind can be used in a Next.js project that is already configured to use Expo or framework-less React Native Web.
+
+Setting up a new Next.js project to use React Native Web is out of scope for these instructions.
+
+> Nativewind will only work with the `/pages` router or on `"use client"` routes. RSC support is in progress.
+
+### 1. Setup Tailwind CSS
+
+Simply configure Next.js as per [the Tailwind CSS Next.js setup guide](https://v3.tailwindcss.com/docs/guides/nextjs)
+
+### 2. Add the Nativewind preset
+
+```diff title="tailwind.config.js"
+
+module.exports = {
+  content: [
+    './pages/**/*.{js,jsx,ts,tsx}',
+  ],
++ presets: [require('nativewind/preset')],
+  theme: {
+    extend: {},
+  },
+}
+```
+
+### 3. Update import source
+
+Nativewind requires the `jsxImportSource` to be set to `nativewind`. The option to configure this depends on how you are compiling your Next.js project.
+
+<Tabs groupId="compiler" items={["SWC","Babel"]} className="bg-fd-secondary">
+  <Tab value="swc" className="bg-fd-card p-1 rounded-xl border [&>p]:px-4 [&>p]:pt-4">
+    
+    Next.js uses a `jsconfig.json`/`tsconfig.json` file to configure the `jsxImportSource`.
+
+    ```json title="tsconfig.json"
+    {
+      "compilerOptions": {
+        "jsxImportSource": "nativewind"
+      }
+    }
+    ```
+  </Tab>
+  <Tab value="babel" className="bg-fd-card rounded-xl">
+    ```diff title="babel.config.js"
+    module.exports = {
+      presets: ["next/babel"],
+    +  plugins: [
+    +    [
+    +      "@babel/plugin-transform-react-jsx",
+    +      {
+    +        runtime: "automatic",
+    +        importSource: "nativewind",
+    +      },
+    +    ],
+    +  ],
+    };
+
+    ```
+  </Tab>
+</Tabs>
+
+### 4. Transpile Nativewind
+
+```diff title="next.config.js"
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
++  transpilePackages: ["nativewind", "react-native-css-interop"],
+}
+```
+
+## Common issues
+
+### Errors about package imports.
+
+```
+import typeof AccessibilityInfo from './Libraries/Components/AccessibilityInfo/AccessibilityInfo';
+^^^^^^
+
+SyntaxError: Cannot use import statement outside a module
+```
+
+This signals that you have incorrectly setup React Native Web and/or a dependency needs to be added to `transpilePackages`. This is out of scope for Nativewind.
+
+### Styles are not being applied
+
+A common issue with Next.js is your styles are imported, but are being overridden by another StyleSheet due to the stylesheet import order.
+
+A simple fix is simply make the Tailwind styles a higher specificity.
+
+```diff title=tailwind.config.json
+module.exports = {
+  content: [
+    './pages/**/*.{js,jsx,ts,tsx}',
+  ],
+  plugins: [require('nativewind/tailwind/css')],
++ important: 'html',
+  theme: {
+    extend: {},
+  },
+}
+```
+
+## Additional Setup Guides
+
+- [Using with Monorepos](./using-with-monorepos) - Learn how to set up Nativewind in monorepo environments like NX
+- [Other Bundlers](/docs/guides/other-bundlers) - Learn how to use Nativewind with other bundlers
+
+# Screen Readers (/docs/tailwind/accessibility/screen-readers)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Screen Readers */}
+
+## Usage
+
+<Usage />
+
+<Callout type="warn" title="CAUTION">
+Accessibility on native devices works differently than the web. Please ensure proper use of the [accessibility props](https://reactnative.dev/docs/accessibility) instead of relying on styling.
+</Callout>
+
+## Compatibility
+
+<Compatibility supported={["sr-only", "not-sr-only"]} />
+
+# Background Attachment (/docs/tailwind/backgrounds/background-attachment)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Background Attachment */}
+
+<Compatibility none={["bg-fixed", "bg-local", "bg-scroll"]} />
+
+# Background Clip (/docs/tailwind/backgrounds/background-clip)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Background Clip */}
+
+<Compatibility
+  none={[
+    "bg-clip-border",
+    "bg-clip-padding",
+    "bg-clip-content",
+    "bg-clip-text",
+  ]}
+/>
+
+# Background Color (/docs/tailwind/backgrounds/background-color)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Background Color */}
+
+<Compatibility
+  supported={["bg-{n}", "bg-[n]"]}
+  none={["bg-inherit", "bg-current"]}
+/>
+
+> backgroundOpacity (native only)
+> 
+> For performance reasons, Nativewind renders with the `corePlugin` `backgroundOpacity` disabled. This plugin allows text to dynamically change its opacity via the `--tw-background-opacity` variable. Instead, the opacity is set as a static value in the `color` property.
+> 
+> If you need to use this feature, you can enable it by adding the following to your `tailwind.config.js` file:
+> 
+> ```js title=tailwind.config.js
+> module.exports = {
+>   /* ...  */
+>   corePlugins: {
+>     backgroundOpacity: true,
+>   },
+> };
+> ```
+
+# Background Image (/docs/tailwind/backgrounds/background-image)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Background Image */}
+
+<Compatibility
+  none={[
+    "bg-none",
+    "bg-gradient-to-t",
+    "bg-gradient-to-tr",
+    "bg-gradient-to-r",
+    "bg-gradient-to-br",
+    "bg-gradient-to-b",
+    "bg-gradient-to-bl",
+    "bg-gradient-to-l",
+    "bg-gradient-to-tl",
+  ]}
+/>
+
+# Background Origin (/docs/tailwind/backgrounds/background-origin)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Background Origin */}
+
+<Compatibility
+  none={["bg-origin-border", "bg-origin-padding", "bg-origin-content"]}
+/>
+
+# Background Position (/docs/tailwind/backgrounds/background-position)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Background Position */}
+
+<Compatibility
+  none={[
+    "bg-bottom",
+    "bg-center",
+    "bg-left",
+    "bg-left-bottom",
+    "bg-left-top",
+    "bg-right",
+    "bg-right-bottom",
+    "bg-right-top",
+    "bg-top",
+  ]}
+/>
+
+# Background Repeat (/docs/tailwind/backgrounds/background-repeat)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Background Repeat */}
+
+<Compatibility
+  none={[
+    "bg-repeat",
+    "bg-no-repeat",
+    "bg-repeat-x",
+    "bg-repeat-y",
+    "bg-repeat-round",
+    "bg-repeat-space",
+  ]}
+/>
+
+# Background Size (/docs/tailwind/backgrounds/background-size)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Background Size */}
+
+<Compatibility none={["bg-auto", "bg-cover", "bg-contain"]} />
+
+# Gradient Color Stops (/docs/tailwind/backgrounds/gradient-color-stops)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Gradient Color Stops */}
+
+<Compatibility
+  none={[
+    "from-inherit",
+    "from-current",
+    "from-transparent",
+    "from-black",
+    "from-white",
+    "from-{n}",
+    "from-[n]",
+    "via-inherit",
+    "via-current",
+    "via-transparent",
+    "via-black",
+    "via-white",
+    "via-{n}",
+    "via-[n]",
+    "to-inherit",
+    "to-current",
+    "to-transparent",
+    "to-black",
+    "to-white",
+    "to-{n}",
+    "to-[n]",
+  ]}
+/>
+
+# Border Color (/docs/tailwind/borders/border-color)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Border Color */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={["border-{n}", "border-[n]"]}
+  none={["border-inherit", "border-current"]}
+/>
+
+> borderOpacity (native only)
+> 
+> For performance reasons, Nativewind renders with the `corePlugin` `borderOpacity` disabled. This plugin allows the border color to dynamically change its opacity via the `--tw-border-opacity` variable. Instead, the opacity is set as a static value in the `color` property.
+> 
+> If you need to use this feature, you can enable it by adding the following to your `tailwind.config.js` file:
+> 
+> ```js title=tailwind.config.js
+> module.exports = {
+>   /* ...  */
+>   corePlugin: {
+>     borderOpacity: true,
+>   },
+> };
+> ```
+
+# Border Radius (/docs/tailwind/borders/border-radius)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Border Radius */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"rounded-none",
+"rounded",
+"rounded-{n}",
+"rounded-[n]",
+"rounded-full",
+"rounded-t-none",
+"rounded-t-{n}",
+"rounded-t-[n]",
+"rounded-t-full",
+"rounded-r-none",
+"rounded-r-{n}",
+"rounded-r-[n]",
+"rounded-r-full",
+"rounded-b-none",
+"rounded-b-{n}",
+"rounded-b-[n]",
+"rounded-b-full",
+"rounded-l-none",
+"rounded-l-{n}",
+"rounded-l-[n]",
+"rounded-l-full",
+"rounded-tl-none",
+"rounded-tl-{n}",
+"rounded-tl-[n]",
+"rounded-tl-full",
+"rounded-tr-none",
+"rounded-tr-{n}",
+"rounded-tr-[n]",
+"rounded-tr-full",
+"rounded-br-none",
+"rounded-br-{n}",
+"rounded-br-[n]",
+"rounded-br-full",
+"rounded-bl-none",
+"rounded-bl-{n}",
+"rounded-bl-[n]",
+"rounded-bl-full",
+]}
+none={[
+"border-inherit",
+"border-current",
+]}
+/>
+
+# Border Style (/docs/tailwind/borders/border-style)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Border Style */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Callout type="tip">
+Use `border-0` instead of `border-none` to remove borders on native.
+</Callout>
+
+<Compatibility
+  supported={["border-solid", "border-dashed", "border-dotted"]}
+  none={["border-none", "border-double", "border-hidden"]}
+/>
+
+# Border Width (/docs/tailwind/borders/border-width)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Border Width */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"border",
+"border-{n}",
+"border-[n]",
+"border-x",
+"border-x-{n}",
+"border-x-[n]",
+"border-y",
+"border-y-{n}",
+"border-y-[n]",
+"border-t",
+"border-t-{n}",
+"border-t-[n]",
+"border-r",
+"border-r-{n}",
+"border-r-[n]",
+"border-b",
+"border-b-{n}",
+"border-b-[n]",
+"border-l",
+"border-l-{n}",
+"border-l-[n]",
+]}
+/>
+
+# Divide Color (/docs/tailwind/borders/divide-color)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Divide Color */}
+
+## Usage
+
+<Usage />
+
+<Callout type="warn" title="CAUTION">
+`Divide Color` was temporary removed in `v4`. We are working to re-add it in the future.
+</Callout>
+
+## Compatibility
+
+<Compatibility
+  none={["divide-{n}", "divide-[n]", "divide-inherit", "divide-current"]}
+/>
+
+> divideOpacity (native only)
+> 
+> For performance reasons, Nativewind renders with the `corePlugin` `divideOpacity` disabled. This plugin allows the divide color to dynamically change its opacity via the `--tw-divide-opacity` variable. Instead, the opacity is set as a static value in the `color` property.
+> 
+> If you need to use this feature, you can enable it by adding the following to your `tailwind.config.js` file:
+> 
+> ```js title=tailwind.config.js
+> module.exports = {
+>   /* ...  */
+>   corePlugin: {
+>     divideOpacity: true,
+>   },
+> };
+> ```
+
+# Divide Style (/docs/tailwind/borders/divide-style)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Divide Style */}
+
+## Usage
+
+<Usage />
+
+<Callout type="warn" title="CAUTION">
+`Divide Style` was temporary removed in `v4`. We are working to re-add it in the future.
+</Callout>
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "divide-solid",
+    "divide-dashed",
+    "divide-dotted",
+    "divide-none",
+    "divide-double",
+    "divide-hidden",
+  ]}
+/>
+
+# Divide Width (/docs/tailwind/borders/divide-width)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Divide Width */}
+
+## Usage
+
+<Usage />
+
+<Callout type="warn" title="CAUTION">
+`Divide Width` was temporary removed in `v4`. We are working to re-add it in the future.
+</Callout>
+
+## Compatibility
+
+<Compatibility
+  none={["divide-x-{n}", "divide-x-[n]", "divide-y-{n}", "divide-y-[n]"]}
+/>
+
+# Outline Color (/docs/tailwind/borders/outline-color)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Outline Color */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "outline-inherit",
+    "outline-current",
+    "outline-transparent",
+    "outline-black",
+    "outline-white",
+    "outline-{n}",
+    "outline-[n]",
+  ]}
+/>
+
+# Outline Offset (/docs/tailwind/borders/outline-offset)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Outline Offset */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "outline-offset-0",
+    "outline-offset-1",
+    "outline-offset-2",
+    "outline-offset-4",
+    "outline-offset-8",
+  ]}
+/>
+
+# Outline Style (/docs/tailwind/borders/outline-style)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Outline Style */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "outline-none",
+    "outline",
+    "outline-dashed",
+    "outline-dotted",
+    "outline-double",
+  ]}
+/>
+
+# Outline Width (/docs/tailwind/borders/outline-width)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Outline Width */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={["outline-0", "outline-1", "outline-2", "outline-4", "outline-8"]}
+/>
+
+# Ring Color (/docs/tailwind/borders/ring-color)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Ring Color */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "ring-inherit",
+    "ring-current",
+    "ring-transparent",
+    "ring-black",
+    "ring-white",
+    "ring-{n}",
+    "ring-[n]",
+  ]}
+/>
+
+# Ring Offset Color (/docs/tailwind/borders/ring-offset-color)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Ring Offset Color */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "ring-offset-0",
+    "ring-offset-1",
+    "ring-offset-2",
+    "ring-offset-4",
+    "ring-offset-8",
+  ]}
+/>
+
+# Ring Offset Width (/docs/tailwind/borders/ring-offset-width)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Ring Offset Width */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "ring-offset-0",
+    "ring-offset-1",
+    "ring-offset-2",
+    "ring-offset-4",
+    "ring-offset-8",
+  ]}
+/>
+
+# Ring Width (/docs/tailwind/borders/ring-width)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Ring Width */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "ring-0",
+    "ring-1",
+    "ring-2",
+    "ring",
+    "ring-4",
+    "ring-8",
+    "ring-inset",
+  ]}
+/>
+
+# Background Blend Mode (/docs/tailwind/effects/background-blend-mode)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Background Blend Mode */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "bg-blend-normal",
+    "bg-blend-multiply",
+    "bg-blend-screen",
+    "bg-blend-overlay",
+    "bg-blend-darken",
+    "bg-blend-lighten",
+    "bg-blend-color-dodge",
+    "bg-blend-color-burn",
+    "bg-blend-hard-light",
+    "bg-blend-soft-light",
+    "bg-blend-difference",
+    "bg-blend-exclusion",
+    "bg-blend-hue",
+    "bg-blend-saturation",
+    "bg-blend-color",
+    "bg-blend-luminosity",
+  ]}
+/>
+
+# Box Shadow Color (/docs/tailwind/effects/box-shadow-color)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Box Shadow Color */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility supported={["shadow-{n}", "shadow-[n]"]} />
+
+# Box Shadow (/docs/tailwind/effects/box-shadow)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Box Shadow */}
+
+Nativewind uses the scaling system from [react-native-shadow-generator](https://ethercreative.github.io/react-native-shadow-generator/) to help generate cross platform shadows.
+
+## Usage
+
+<Usage />
+
+<Callout type="warn" title="CAUTION">
+On native, shadows may not appear if a background color is not set
+</Callout>
+
+## Example
+
+{/* TODO: ```SnackPlayer name=Hello%20World */}
+
+```tsx
+import { Text, View } from 'react-native';
+import { styled } from 'nativewind';
+
+const StyledView = styled(View)
+const StyledText = styled(Text)
+
+const App = () => {
+  return (
+    <StyledView className="flex-1 items-center justify-center">
+      <StyledView className="h-[50vh] items-center justify-center shadow">
+        <StyledText className="text-slate-800 shadow">Try editing me! 🎉</StyledText>
+      </StyledView>
+    </StyledView>
+  );
+}
+```
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "shadow",
+    "shadow-{n}",
+    "shadow-none",
+  ]}
+  none={[
+    "shadow-[n]",
+    "shadow-inner",
+  ]}
+/>
+
+# Mix Blend Mode (/docs/tailwind/effects/mix-blend-mode)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Mix Blend Mode */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "mix-blend-normal",
+    "mix-blend-multiply",
+    "mix-blend-screen",
+    "mix-blend-overlay",
+    "mix-blend-darken",
+    "mix-blend-lighten",
+    "mix-blend-color-dodge",
+    "mix-blend-color-burn",
+    "mix-blend-hard-light",
+    "mix-blend-soft-light",
+    "mix-blend-difference",
+    "mix-blend-exclusion",
+    "mix-blend-hue",
+    "mix-blend-saturation",
+    "mix-blend-color",
+    "mix-blend-luminosity",
+    "mix-blend-plus-lighter",
+  ]}
+/>
+
+# Opacity (/docs/tailwind/effects/opacity)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Opacity */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"opacity-{n}",
+"opacity-[n]",
+]}
+/>
+
+# Backdrop Blur (/docs/tailwind/filters/backdrop-blur)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Backdrop Blur */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "backdrop-blur-none",
+    "backdrop-blur-sm",
+    "backdrop-blur",
+    "backdrop-blur-md",
+    "backdrop-blur-lg",
+    "backdrop-blur-xl",
+    "backdrop-blur-2xl",
+    "backdrop-blur-3xl",
+  ]}
+/>
+
+# Backdrop Brightness (/docs/tailwind/filters/backdrop-brightness)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Backdrop Brightness */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "backdrop-brightness-0",
+    "backdrop-brightness-50",
+    "backdrop-brightness-75",
+    "backdrop-brightness-90",
+    "backdrop-brightness-95",
+    "backdrop-brightness-100",
+    "backdrop-brightness-105",
+    "backdrop-brightness-110",
+    "backdrop-brightness-125",
+    "backdrop-brightness-150",
+    "backdrop-brightness-200",
+  ]}
+/>
+
+# Backdrop Contrast (/docs/tailwind/filters/backdrop-contrast)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Backdrop Contrast */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "backdrop-contrast-0",
+    "backdrop-contrast-50",
+    "backdrop-contrast-75",
+    "backdrop-contrast-100",
+    "backdrop-contrast-125",
+    "backdrop-contrast-150",
+    "backdrop-contrast-200",
+  ]}
+/>
+
+# Backdrop GrayScale (/docs/tailwind/filters/backdrop-grayscale)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Backdrop GrayScale */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["backdrop-grayscale-0", "backdrop-grayscale"]} />
+
+# Backdrop Hue Rotate (/docs/tailwind/filters/backdrop-hue-rotate)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Backdrop Hue Rotate */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "backdrop-hue-rotate-0",
+    "backdrop-hue-rotate-15",
+    "backdrop-hue-rotate-30",
+    "backdrop-hue-rotate-60",
+    "backdrop-hue-rotate-90",
+    "backdrop-hue-rotate-180",
+  ]}
+/>
+
+# Backdrop Invert (/docs/tailwind/filters/backdrop-invert)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Backdrop Invert */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["backdrop-invert-0", "backdrop-invert"]} />
+
+# Backdrop Opacity (/docs/tailwind/filters/backdrop-opacity)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Backdrop Opacity */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "backdrop-opacity-0",
+    "backdrop-opacity-5",
+    "backdrop-opacity-10",
+    "backdrop-opacity-20",
+    "backdrop-opacity-25",
+    "backdrop-opacity-30",
+    "backdrop-opacity-40",
+    "backdrop-opacity-50",
+    "backdrop-opacity-60",
+    "backdrop-opacity-70",
+    "backdrop-opacity-75",
+    "backdrop-opacity-80",
+    "backdrop-opacity-90",
+    "backdrop-opacity-95",
+    "backdrop-opacity-100",
+  ]}
+/>
+
+# Backdrop Invert (/docs/tailwind/filters/backdrop-saturate)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Backdrop Invert */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "backdrop-saturate-0",
+    "backdrop-saturate-50",
+    "backdrop-saturate-100",
+    "backdrop-saturate-150",
+    "backdrop-saturate-200",
+  ]}
+/>
+
+# Backdrop Sepia (/docs/tailwind/filters/backdrop-sepia)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Backdrop Sepia */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["backdrop-sepia-0", "backdrop-sepia"]} />
+
+# Blur (/docs/tailwind/filters/blur)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Blur */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "blur-none",
+    "blur-sm",
+    "blur",
+    "blur-md",
+    "blur-lg",
+    "blur-xl",
+    "blur-2xl",
+    "blur-3xl",
+  ]}
+/>
+
+# Brightness (/docs/tailwind/filters/brightness)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Brightness */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "brightness-0",
+    "brightness-50",
+    "brightness-75",
+    "brightness-90",
+    "brightness-95",
+    "brightness-100",
+    "brightness-105",
+    "brightness-110",
+    "brightness-125",
+    "brightness-150",
+    "brightness-200",
+  ]}
+/>
+
+# Contrast (/docs/tailwind/filters/contrast)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Contrast */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "contrast-0",
+    "contrast-50",
+    "contrast-75",
+    "contrast-100",
+    "contrast-125",
+    "contrast-150",
+    "contrast-200",
+  ]}
+/>
+
+# Drop Shadow (/docs/tailwind/filters/drop-shadow)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Drop Shadow */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "drop-shadow-sm",
+    "drop-shadow",
+    "drop-shadow-md",
+    "drop-shadow-lg",
+    "drop-shadow-xl",
+    "drop-shadow-2xl",
+    "drop-shadow-none",
+  ]}
+/>
+
+# GrayScale (/docs/tailwind/filters/grayscale)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # GrayScale */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["grayscale-0", "grayscale"]} />
+
+# Hue Rotate (/docs/tailwind/filters/hue-rotate)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Hue Rotate */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "hue-rotate-0",
+    "hue-rotate-15",
+    "hue-rotate-30",
+    "hue-rotate-60",
+    "hue-rotate-90",
+    "hue-rotate-180",
+  ]}
+/>
+
+# Invert (/docs/tailwind/filters/invert)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Invert */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["invert-0", "invert"]} />
+
+# Invert (/docs/tailwind/filters/saturate)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Invert */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "saturate-0",
+    "saturate-50",
+    "saturate-100",
+    "saturate-150",
+    "saturate-200",
+  ]}
+/>
+
+# Sepia (/docs/tailwind/filters/sepia)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Sepia */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["sepia-0", "sepia"]} />
+
+# Align Content (/docs/tailwind/flexbox/align-content)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Align Content */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"content-center",
+"content-start",
+"content-end",
+"content-between",
+"content-around",
+"content-evenly",
+]}
+/>
+
+# Align Items (/docs/tailwind/flexbox/align-items)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Align Items */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"items-start",
+"items-end",
+"items-center",
+"items-baseline",
+"items-stretch",
+]}
+/>
+
+# Align Self (/docs/tailwind/flexbox/align-self)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Align Self */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"self-auto",
+"self-start",
+"self-end",
+"self-center",
+"self-stretch",
+"self-baseline",
+]}
+/>
+
+# Flex Basis (/docs/tailwind/flexbox/flex-basis)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Flex Basis */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[ "basis-{n}", "basis-[n]" ]}
+none={[
+"basis-auto",
+]}
+/>
+
+# Flex Direction (/docs/tailwind/flexbox/flex-direction)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Flex Direction */}
+
+## Usage
+
+<Usage />
+
+:::tip
+React Native has a different default flex direction to web. We highly recommend explicting setting the Flex Direction on your components.
+:::
+
+## Compatibility
+
+<Compatibility
+supported={[
+"flex-row",
+"flex-row-reverse",
+"flex-col",
+"flex-col-reverse",
+]}
+/>
+
+# Flex Grow (/docs/tailwind/flexbox/flex-grow)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Flex Grow */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"grow",
+"grow-0",
+]}
+/>
+
+# Flex Shrink (/docs/tailwind/flexbox/flex-shrink)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Flex Shrink */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"shrink",
+"shrink-0",
+]}
+/>
+
+# Flex Wrap (/docs/tailwind/flexbox/flex-wrap)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Flex Wrap */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"flex-wrap",
+"flex-wrap-reverse",
+"flex-nowrap"
+]}
+/>
+
+# Flex (/docs/tailwind/flexbox/flex)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Flex */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={["flex-1", "basis-[n]"]}
+  none={["flex-auto", "flex-initial", "flex-none"]}
+/>
+
+# Gap (/docs/tailwind/flexbox/gap)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Gap */}
+
+## Usage
+
+<Usage />
+
+<Callout type="warn" title="CAUTION">
+`gap` requires React Native 0.71
+</Callout>
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "gap-{n}",
+    "gap-[n]",
+    "gap-x-{n}",
+    "gap-x-[n]",
+    "gap-y-{n}",
+    "gap-y-[n]",
+  ]}
+/>
+
+# Grid Auto Columns (/docs/tailwind/flexbox/grid-auto-columns)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Grid Auto Columns */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={["auto-cols-auto", "auto-cols-min", "auto-cols-max", "auto-cols-fr"]}
+/>
+
+# Grid Auto Flow (/docs/tailwind/flexbox/grid-auto-flow)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Grid Auto Flow */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "grid-flow-row",
+    "grid-flow-col",
+    "grid-flow-dense",
+    "grid-flow-row-dense",
+    "grid-flow-col-dense",
+  ]}
+/>
+
+# Grid Auto Rows (/docs/tailwind/flexbox/grid-auto-rows)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Grid Auto Rows */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={["auto-rows-auto", "auto-rows-min", "auto-rows-max", "auto-rows-fr"]}
+/>
+
+# Grid Column Start / End (/docs/tailwind/flexbox/grid-column)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Grid Column Start / End */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "col-auto",
+    "col-span-1",
+    "col-span-2",
+    "col-span-3",
+    "col-span-4",
+    "col-span-5",
+    "col-span-6",
+    "col-span-7",
+    "col-span-8",
+    "col-span-9",
+    "col-span-10",
+    "col-span-11",
+    "col-span-12",
+    "col-span-full",
+    "col-start-1",
+    "col-start-2",
+    "col-start-3",
+    "col-start-4",
+    "col-start-5",
+    "col-start-6",
+    "col-start-7",
+    "col-start-8",
+    "col-start-9",
+    "col-start-10",
+    "col-start-11",
+    "col-start-12",
+    "col-start-13",
+    "col-start-auto",
+    "col-end-1",
+    "col-end-2",
+    "col-end-3",
+    "col-end-4",
+    "col-end-5",
+    "col-end-6",
+    "col-end-7",
+    "col-end-8",
+    "col-end-9",
+    "col-end-10",
+    "col-end-11",
+    "col-end-12",
+    "col-end-13",
+    "col-end-auto",
+  ]}
+/>
+
+# Grid Row Start / End (/docs/tailwind/flexbox/grid-row)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Grid Row Start / End */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "row-auto",
+    "row-span-1",
+    "row-span-2",
+    "row-span-3",
+    "row-span-4",
+    "row-span-5",
+    "row-span-6",
+    "row-span-7",
+    "row-span-8",
+    "row-span-9",
+    "row-span-10",
+    "row-span-11",
+    "row-span-12",
+    "row-span-full",
+    "row-start-1",
+    "row-start-2",
+    "row-start-3",
+    "row-start-4",
+    "row-start-5",
+    "row-start-6",
+    "row-start-7",
+    "row-start-8",
+    "row-start-9",
+    "row-start-10",
+    "row-start-11",
+    "row-start-12",
+    "row-start-13",
+    "row-start-auto",
+    "row-end-1",
+    "row-end-2",
+    "row-end-3",
+    "row-end-4",
+    "row-end-5",
+    "row-end-6",
+    "row-end-7",
+    "row-end-8",
+    "row-end-9",
+    "row-end-10",
+    "row-end-11",
+    "row-end-12",
+    "row-end-13",
+    "row-end-auto",
+  ]}
+/>
+
+# Grid Template Columns (/docs/tailwind/flexbox/grid-template-columns)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Grid Template Columns */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "grid-cols-1",
+    "grid-cols-2",
+    "grid-cols-3",
+    "grid-cols-4",
+    "grid-cols-5",
+    "grid-cols-6",
+    "grid-cols-7",
+    "grid-cols-8",
+    "grid-cols-9",
+    "grid-cols-10",
+    "grid-cols-11",
+    "grid-cols-12",
+    "grid-cols-none",
+  ]}
+/>
+
+# Grid Template Rows (/docs/tailwind/flexbox/grid-template-rows)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Grid Template Rows */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "grid-rows-1",
+    "grid-rows-2",
+    "grid-rows-3",
+    "grid-rows-4",
+    "grid-rows-5",
+    "grid-rows-6",
+    "grid-rows-7",
+    "grid-rows-8",
+    "grid-rows-9",
+    "grid-rows-10",
+    "grid-rows-11",
+    "grid-rows-12",
+    "grid-rows-none",
+  ]}
+/>
+
+# Justify Content (/docs/tailwind/flexbox/justify-content)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Justify Content */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "justify-start",
+    "justify-end",
+    "justify-center",
+    "justify-between",
+    "justify-around",
+    "justify-evenly",
+  ]}
+/>
+
+# Justify Items (/docs/tailwind/flexbox/justify-items)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Justify Items */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "justify-items-start",
+    "justify-items-end",
+    "justify-items-center",
+    "justify-items-stretch",
+  ]}
+/>
+
+# Justify Self (/docs/tailwind/flexbox/justify-self)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Justify Self */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "justify-self-auto",
+    "justify-self-start",
+    "justify-self-end",
+    "justify-self-center",
+    "justify-self-stretch",
+  ]}
+/>
+
+# Order (/docs/tailwind/flexbox/order)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Order */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "order-1",
+    "order-2",
+    "order-3",
+    "order-4",
+    "order-5",
+    "order-6",
+    "order-7",
+    "order-8",
+    "order-9",
+    "order-10",
+    "order-11",
+    "order-12",
+    "order-first",
+    "order-last",
+    "order-none",
+  ]}
+/>
+
+# Place Items (/docs/tailwind/flexbox/place-content)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Place Items */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "place-items-start",
+    "place-items-end",
+    "place-items-center",
+    "place-items-baseline",
+    "place-items-stretch",
+  ]}
+/>
+
+# Place Content (/docs/tailwind/flexbox/place-items)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Place Content */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "place-content-center",
+    "place-content-start",
+    "place-content-end",
+    "place-content-between",
+    "place-content-around",
+    "place-content-evenly",
+    "place-content-baseline",
+    "place-content-stretch",
+  ]}
+/>
+
+# Place Self (/docs/tailwind/flexbox/place-self)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Place Self */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "place-self-auto",
+    "place-self-start",
+    "place-self-end",
+    "place-self-center",
+    "place-self-stretch",
+  ]}
+/>
+
+# Accent Color (/docs/tailwind/interactivity/accent-color)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Accent Color */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "accent-{n}",
+    "accent-[n]",
+    "accent-black",
+    "accent-white",
+    "accent-transparent",
+    "accent-inherit",
+    "accent-current",
+  ]}
+/>
+
+## Contributors
+
+We are looking for contributors for the following:
+
+### Add `accent-{value}`
+
+React Native doesn't have a value for `accent`, however many 3rd party libraries do.
+
+A solution maybe allowing `accent` to compile, but is stripped if not used as part of a `nativeStyleProps` mapping.
+
+# Appearance (/docs/tailwind/interactivity/appearance)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Appearance */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["appearance-none"]} />
+
+# Caret Color (/docs/tailwind/interactivity/caret-color)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Caret Color */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "caret-{n}",
+    "caret-[n]",
+    "caret-black",
+    "caret-white",
+    "caret-transparent",
+  ]}
+  none={["caret-inherit", "caret-current"]}
+/>
+
+## Contributors
+
+We are looking for contributors for the following:
+
+### Add `pointer-events-none`
+
+`caretColor` should map to [`cursorColor`](https://reactnative.dev/docs/textinput#cursorcolor-android)
+
+# Cursor (/docs/tailwind/interactivity/cursor)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Cursor */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["cursor-{n}", "cursor-[n]"]} />
+
+# Pointer Events (/docs/tailwind/interactivity/pointer-events)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Pointer Events */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility supported={["pointer-events-none", "pointer-events-auto"]} native={["pointer-events-box-none", "pointer-events-box-only"]} />
+
+# Resize (/docs/tailwind/interactivity/resize)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Resize */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["resize-none", "resize-y", "resize-x", "resize"]} />
+
+# Scroll Behavior (/docs/tailwind/interactivity/scroll-behaviour)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Scroll Behavior */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["scroll-auto", "scroll-smooth"]} />
+
+# Scroll Margin (/docs/tailwind/interactivity/scroll-margin)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Scroll Margin */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "scroll-m-{n}",
+    "scroll-m-[n]",
+    "scroll-mx-{n}",
+    "scroll-mx-[n]",
+    "scroll-my-{n}",
+    "scroll-my-[n]",
+    "scroll-mt-{n}",
+    "scroll-mt-[n]",
+    "scroll-mr-{n}",
+    "scroll-mr-[n]",
+    "scroll-mb-{n}",
+    "scroll-mb-[n]",
+    "scroll-ml-{n}",
+    "scroll-ml-[n]",
+  ]}
+/>
+
+# Scroll Padding (/docs/tailwind/interactivity/scroll-padding)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Scroll Padding */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "scroll-p-{n}",
+    "scroll-p-[n]",
+    "scroll-px-{n}",
+    "scroll-px-[n]",
+    "scroll-py-{n}",
+    "scroll-py-[n]",
+    "scroll-pt-{n}",
+    "scroll-pt-[n]",
+    "scroll-pr-{n}",
+    "scroll-pr-[n]",
+    "scroll-pb-{n}",
+    "scroll-pb-[n]",
+    "scroll-pl-{n}",
+    "scroll-pl-[n]",
+  ]}
+/>
+
+# Scroll Snap Align (/docs/tailwind/interactivity/scroll-snap-align)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Scroll Snap Align */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={["snap-start", "snap-end", "snap-center", "snap-align-none"]}
+/>
+
+# Scroll Snap Stop (/docs/tailwind/interactivity/scroll-snap-stop)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Scroll Snap Stop */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["snap-normal", "snap-always"]} />
+
+# Scroll Snap Type (/docs/tailwind/interactivity/scroll-snap-type)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Scroll Snap Type */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "snap-none",
+    "snap-x",
+    "snap-y",
+    "snap-both",
+    "snap-mandatory",
+    "snap-proximity",
+  ]}
+/>
+
+# Touch Action (/docs/tailwind/interactivity/touch-action)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Touch Action */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "touch-auto",
+    "touch-none",
+    "touch-pan-x",
+    "touch-pan-left",
+    "touch-pan-right",
+    "touch-pan-y",
+    "touch-pan-up",
+    "touch-pan-down",
+    "touch-pinch-zoom	",
+    "touch-manipulation	",
+  ]}
+/>
+
+# User Select (/docs/tailwind/interactivity/user-select)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # User Select */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={["select-none", "select-text", "select-all", "select-auto"]}
+/>
+
+## Contributors
+
+We are looking for contributors for the following:
+
+### Add `select-[n]`
+
+`userSelect` was added in [React Native 0.71](https://reactnative.dev/blog/2023/01/12/version-071#styles)
+
+# Will Change (/docs/tailwind/interactivity/will-change)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Will Change */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "will-change-auto",
+    "will-change-scroll",
+    "will-change-contents",
+    "will-change-transform",
+  ]}
+/>
+
+## Contributors
+
+We are looking for contributors for the following:
+
+### Add `will-change-transform`
+
+When a component has a transition or animation class name it will use `react-native-reanimated`'s `Animated.createAnimatedComponent()` to make the component animated. If these class names are conditional, this will cause the component to unmount as Nativewind will conditionally render two different components.
+
+A proposed solution is to use `will-change-transform` to force the component to be animated, even if not required.
+
+# Aspect Ratio (/docs/tailwind/layout/aspect-ratio)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Aspect Ratio */}
+
+## Usage
+
+<Usage href="aspect-ratio" />
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "aspect-auto",
+    "aspect-video",
+    "aspect-square",
+    "aspect-[n]",
+    "aspect-{n}",
+  ]}
+/>
+
+# Box Decoration Break (/docs/tailwind/layout/box-decoration-break)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Box Decoration Break */}
+
+## Usage
+
+<Usage href="box-decoration-break" />
+
+## Compatibility
+
+<Compatibility none={["box-decoration-clone", "box-decoration-slice"]} />
+
+# Box Sizing (/docs/tailwind/layout/box-sizing)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Box Sizing */}
+
+## Usage
+
+<Usage href="box-sizing" />
+
+## Compatibility
+
+<Compatibility none={["box-border", "box-content"]} />
+
+# Break After (/docs/tailwind/layout/break-after)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Break After */}
+
+## Usage
+
+<Usage href="break-after" />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "break-after-auto",
+    "break-after-avoid",
+    "break-after-all",
+    "break-after-avoid-page",
+    "break-after-page",
+    "break-after-left",
+    "break-after-right",
+    "break-after-column",
+  ]}
+/>
+
+# Break Before (/docs/tailwind/layout/break-before)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Break Before */}
+
+## Usage
+
+<Usage href="break-before" />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "break-before-auto",
+    "break-before-avoid",
+    "break-before-all",
+    "break-before-avoid-page",
+    "break-before-page",
+    "break-before-left",
+    "break-before-right",
+    "break-before-column",
+  ]}
+/>
+
+# Break Inside (/docs/tailwind/layout/break-inside)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Break Inside */}
+
+## Usage
+
+<Usage href="break-inside" />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "break-inside-auto",
+    "break-inside-avoid",
+    "break-inside-avoid-page",
+    "break-inside-avoid-column",
+  ]}
+/>
+
+# Clear (/docs/tailwind/layout/clear)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Clear */}
+
+## Usage
+
+<Usage href="clear" />
+
+## Compatibility
+
+<Compatibility
+  none={["clear-left", "clear-right", "clear-both", "clear-none"]}
+/>
+
+# Columns (/docs/tailwind/layout/columns)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Columns */}
+
+## Usage
+
+<Usage href="columns" />
+
+## Compatibility
+
+<Compatibility none={["columns-[n]", "columns-{n}"]} />
+
+# Container (/docs/tailwind/layout/container)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Container */}
+
+> Nativewind's default breakpoints are not yet designed for native devices and still uses the web defaults.
+
+## Usage
+
+<Usage href="container" />
+
+## Compatibility
+
+<Compatibility supported={["container"]} />
+
+# Display (/docs/tailwind/layout/display)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Display */}
+
+## Usage
+
+<Usage href="display" />
+
+## Compatibility
+
+<Compatibility
+supported={[ "flex", "hidden" ]}
+none={[
+"block",
+"inline-block",
+"inline",
+"inline-flex",
+"table",
+"inline-table",
+"table-caption",
+"table-cell",
+"table-column",
+"table-column-group",
+"table-footer-group",
+"table-header-group",
+"table-row-group",
+"table-row",
+"flow-root",
+"grid",
+"inline-grid",
+"contents",
+"list-item",
+]}
+/>
+
+# Floats (/docs/tailwind/layout/float)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Floats */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["float-right", "float-left", "float-none"]} />
+
+# Isolation (/docs/tailwind/layout/isolation)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Isolation */}
+
+## Usage
+
+<Usage href="isolation" />
+
+## Compatibility
+
+<Compatibility none={["isolate", "isolation-auto"]} />
+
+# Object Fit (/docs/tailwind/layout/object-fit)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Object Fit */}
+
+## Usage
+
+<Usage href="object-fit" />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "object-contain",
+    "object-cover",
+    "object-fill",
+    "object-none",
+    "object-scale-down",
+  ]}
+/>
+
+## Contributors
+
+We are looking for contributors for the following:
+
+### Add `object-fit`
+
+`object-fit` was added in [React Native 0.71](https://reactnative.dev/blog/2023/01/12/version-071#styles)
+
+# Object Position (/docs/tailwind/layout/object-position)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Object Position */}
+
+## Usage
+
+<Usage href="object-position" />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "object-bottom",
+    "object-center",
+    "object-left",
+    "object-left-bottom",
+    "object-left-top",
+    "object-right",
+    "object-right-bottom",
+    "object-right-top",
+    "object-top",
+  ]}
+/>
+
+# Overflow (/docs/tailwind/layout/overflow)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Overflow */}
+
+## Usage
+
+<Usage href="overflow" />
+
+## Compatibility
+
+<Compatibility
+supported={[ "visible", "hidden", "scroll" ]}
+none={[
+"overflow-auto",
+"overflow-clip",
+"overflow-x-auto",
+"overflow-y-auto",
+"overflow-x-hidden",
+"overflow-y-hidden",
+"overflow-x-clip",
+"overflow-y-clip",
+"overflow-x-visible",
+"overflow-y-visible",
+"overflow-x-scroll",
+"overflow-y-scroll",
+]}
+/>
+
+# Overscroll Behavior (/docs/tailwind/layout/overscroll-behavior)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Overscroll Behavior */}
+
+## Usage
+
+<Usage href="overscroll-behavior" />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "overscroll-auto",
+    "overscroll-contain",
+    "overscroll-none",
+    "overscroll-y-auto",
+    "overscroll-y-contain",
+    "overscroll-y-none",
+    "overscroll-x-auto",
+    "overscroll-x-contain",
+    "overscroll-x-none",
+  ]}
+/>
+
+# Position (/docs/tailwind/layout/position)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Position */}
+
+## Usage
+
+<Usage href="position" />
+
+## Compatibility
+
+<Compatibility
+supported={[ "absolute", "relative" ]}
+none={[
+"fixed",
+"sticky"
+]}
+/>
+
+# Top / Right / Bottom / Left (/docs/tailwind/layout/top-right-bottom-left)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Top / Right / Bottom / Left */}
+
+## Usage
+
+<Usage href="top-right-bottom-left" />
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "inset-{n}",
+    "inset-[n]",
+    "inset-x-{n}",
+    "inset-y-[n]",
+    "top-{n}",
+    "top-[n]",
+    "bottom-{n}",
+    "bottom-[n]",
+    "left-{n}",
+    "left-[n]",
+    "right-{n}",
+    "right-[n]",
+  ]}
+  none={[
+    "inset-auto",
+    "inset-x-auto",
+    "inset-y-auto",
+    "top-auto",
+    "bottom-auto",
+    "left-auto",
+    "right-auto",
+  ]}
+/>
+
+# Visibility (/docs/tailwind/layout/visibility)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Visibility */}
+
+On native, the Visibility class names map to `opacity` instead of `visibility`.
+
+## Usage
+
+<Usage href="visibility" />
+
+## Compatibility
+
+<Compatibility supported={["visible", "invisible"]} none={["collapse"]} />
+
+# Z-Index (/docs/tailwind/layout/z-index)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Z-Index */}
+
+## Usage
+
+<Usage href="z-index" />
+
+## Compatibility
+
+<Compatibility
+supported={[ "z-{n}", "z-[n]" ]}
+none={[
+"z-auto",
+]}
+/>
+
+# Safe Area Insets (/docs/tailwind/new-concepts/safe-area-insets)
+
+import Compatibility from "../_compatibility-with-comments.mdx";
+
+{/* # Safe Area Insets */}
+
+## Overview
+
+Safe Area Insets are the area of the screen that is not covered by the notch, home indicator, or rounded corners. This is the area where you should place your content to ensure it is not obscured by the system UI.
+
+## Usage (native)
+
+On native, the safe area measurements are provided by [`react-native-safe-area-context`](https://github.com/th3rdwave/react-native-safe-area-context). You will need to wrap your app with the `SafeAreaProvider` and use the `useSafeAreaEnv` hook to get the safe area insets.
+
+```tsx
+import { View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+
+export function MyApp(props) {
+  // Make sure you have the SafeAreaProvider at the root of your app
+  return (
+    <SafeAreaProvider>
+      <View className="p-safe" {...props} />
+    </SafeAreaProvider>
+  );
+}
+```
+
+<Callout type="tip">
+Expo Router adds the \<SafeAreaProvider /> to every route. This setup is not needed
+</Callout>
+
+## Usage (web)
+
+On web, your CSS StyleSheet will use the [CSS `env()` function](https://developer.mozilla.org/en-US/docs/Web/CSS/env) and no extra setup is needed.
+
+The `h-screen-safe` and `min-h-screen-safe` utilities may not work as expected on Google Chrome. Add height: `-webkit-fill-available` on parent nodes:
+
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    height: -webkit-fill-available;
+  }
+
+  body {
+    height: -webkit-fill-available;
+  }
+
+  #root {
+    height: -webkit-fill-available;
+  }
+}
+```
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    [
+      "m-safe",
+      <code>{`\
+margin-top: env(safe-area-inset-top);
+margin-bottom: env(safe-area-inset-bottom);
+margin-left: env(safe-area-inset-left);
+margin-right: env(safe-area-inset-right);
+`}</code>,
+    ],
+    [
+      "p-safe",
+      <code>{`\
+padding-top: env(safe-area-inset-top);
+padding-bottom: env(safe-area-inset-bottom);
+padding-left: env(safe-area-inset-left);
+padding-right: env(safe-area-inset-right);
+`}</code>,
+    ],
+    [
+      "mx-safe",
+      <code>{`\
+margin-left: env(safe-area-inset-left);
+margin-right: env(safe-area-inset-right);
+`}</code>,
+    ],
+    [
+      "px-safe",
+      <code>{`\
+padding-left: env(safe-area-inset-left);
+padding-right: env(safe-area-inset-right);
+`}</code>,
+    ],
+    [
+      "my-safe",
+      <code>{`\
+margin-top: env(safe-area-inset-top);
+margin-bottom: env(safe-area-inset-bottom);
+`}</code>,
+    ],
+    [
+      "py-safe",
+      <code>{`\
+padding-top: env(safe-area-inset-top);
+padding-bottom: env(safe-area-inset-bottom);
+`}</code>,
+    ],
+    [
+      "ms-safe",
+      <code>{`\
+margin-start: env(safe-area-inset-left);
+`}</code>,
+    ],
+    [
+      "me-safe",
+      <code>{`\
+margin-end: env(safe-area-inset-right);
+`}</code>,
+    ],
+    [
+      "ps-safe",
+      <code>{`\
+padding-start: env(safe-area-inset-left);
+`}</code>,
+    ],
+    [
+      "pe-safe",
+      <code>{`\
+padding-end: env(safe-area-inset-right);
+`}</code>,
+    ],
+    [
+      "mt-safe",
+      <code>{`\
+margin-top: env(safe-area-inset-top);
+`}</code>,
+    ],
+    [
+      "pt-safe",
+      <code>{`\
+padding-top: env(safe-area-inset-top);
+`}</code>,
+    ],
+    [
+      "mr-safe",
+      <code>{`\
+margin-right: env(safe-area-inset-right);
+`}</code>,
+    ],
+    [
+      "pr-safe",
+      <code>{`\
+padding-right: env(safe-area-inset-right);
+`}</code>,
+    ],
+    [
+      "mb-safe",
+      <code>{`\
+margin-bottom: env(safe-area-inset-bottom);
+`}</code>,
+    ],
+    [
+      "pb-safe",
+      <code>{`\
+padding-bottom: env(safe-area-inset-bottom);
+`}</code>,
+    ],
+    [
+      "ml-safe",
+      <code>{`\
+margin-left: env(safe-area-inset-left);
+`}</code>,
+    ],
+    [
+      "pl-safe",
+      <code>{`\
+padding-left: env(safe-area-inset-left);
+`}</code>,
+    ],
+    [
+      "inset-safe",
+      <code>{`\
+top: env(safe-area-inset-top);
+right: env(safe-area-inset-right);
+bottom: env(safe-area-inset-bottom);
+left: env(safe-area-inset-left);
+`}</code>,
+    ],
+    [
+      "inset-x-safe",
+      <code>{`\
+left: env(safe-area-inset-left);
+right: env(safe-area-inset-right);
+`}</code>,
+    ],
+    [
+      "inset-y-safe",
+      <code>{`\
+top: env(safe-area-inset-top);
+bottom: env(safe-area-inset-bottom);
+`}</code>,
+    ],
+    [
+      "top-safe",
+      <code>{`\
+top: env(safe-area-inset-top);
+`}</code>,
+    ],
+    [
+      "right-safe",
+      <code>{`\
+right: env(safe-area-inset-right);
+`}</code>,
+    ],
+    [
+      "bottom-safe",
+      <code>{`\
+bottom: env(safe-area-inset-bottom);
+`}</code>,
+    ],
+    [
+      "left-safe",
+      <code>{`\
+left: env(safe-area-inset-left);
+`}</code>,
+    ],
+    [
+      "start-safe",
+      <code>{`\
+inset-inline-start: env(safe-area-inset-left);
+`}</code>,
+    ],
+    [
+      "end-safe",
+      <code>{`\
+inset-inline-end: env(safe-area-inset-right);
+`}</code>,
+    ],
+    [
+      "h-screen-safe",
+      <code>{`\
+height: calc(100vh - (env(safe-area-inset-top) + env(safe-area-inset-bottom)))
+`}</code>,
+    ],
+    [
+      "min-h-screen-safe",
+      <code>{`\
+min-height: calc(100vh - (env(safe-area-inset-top) + env(safe-area-inset-bottom)))
+`}</code>,
+    ],
+    [
+      "max-h-screen-safe",
+      <code>{`\
+max-height: calc(100vh - (env(safe-area-inset-top) + env(safe-area-inset-bottom)))
+`}</code>,
+    ],
+    [
+      "*-safe-or-[n]",
+      <div>
+        <code>*</code> can be substituted for any spacing utility.
+        <br />
+        <code>[n]</code> can be substituted for any spacing value.
+        <code>{`\
+// example using mt-safe-or-4
+margin-top: max(env(safe-area-inset-top), 1rem);
+
+// example using mt-safe-or-[2px]
+margin-top: max(env(safe-area-inset-top), 2px);
+`}</code>
+      </div>,
+    ],
+    [
+      "*-safe-offset-[n]",
+      <div>
+        <code>*</code> can be substituted for any spacing utility.
+        <br />
+        <code>[n]</code> can be substituted for any spacing value.
+        <code>{`\
+// example using mt-safe-offset-4
+margin-top: calc(env(safe-area-inset-top) + 1rem);
+
+// example using mt-safe-offset-[2px]
+margin-top: calc(env(safe-area-inset-top) + 2px);
+`}</code>
+      </div>,
+    ],
+  ]}
+/>
+
+# Container Queries (/docs/tailwind/plugins/container-queries)
+
+import Compatibility from "../_compatibility.mdx";
+
+{/* # Container Queries */}
+
+Nativewind supports the official [TailwindCSS Container Query plugin](https://github.com/tailwindlabs/tailwindcss-container-queries)
+
+<Compatibility
+  supported={[
+    "@container",
+    "@container/{name}",
+    "@{size}/{name}:{modifier}",
+    "@container-normal",
+  ]}
+/>
+
+# Height (/docs/tailwind/sizing/height)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Height */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={["h-{n}", "h-[n]", "h-full", "h-screen"]}
+  none={["h-auto", "h-min", "h-max", "h-fit"]}
+/>
+
+# Max-Height (/docs/tailwind/sizing/max-height)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Max-Height */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "max-h-0",
+    "max-h-[n]",
+    "max-h-{n}",
+    "max-h-full",
+    "max-h-screen",
+  ]}
+  none={["max-h-min", "max-h-max", "max-h-fit"]}
+/>
+
+# Max-Width (/docs/tailwind/sizing/max-width)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Max-Width */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "max-w-0",
+    "max-w-[n]",
+    "max-w-{n}",
+    "max-w-full",
+    "max-w-screen-sm",
+    "max-w-screen-md",
+    "max-w-screen-lg",
+    "max-w-screen-xl",
+    "max-w-screen-2xl",
+  ]}
+  none={["max-w-min", "max-w-max", "max-w-fit", "max-w-prose"]}
+/>
+
+# Min-Height (/docs/tailwind/sizing/min-height)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Min-Height */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={["min-h-0", "min-h-[n]", "min-h-full"]}
+  none={["min-h-min", "min-h-max", "min-h-fit"]}
+/>
+
+# Min-Width (/docs/tailwind/sizing/min-width)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Min-Width */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={["min-w-0", "min-w-[n]", "min-w-full"]}
+  none={["min-w-min", "min-w-max", "min-w-fit"]}
+/>
+
+# Width (/docs/tailwind/sizing/width)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Width */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={["w-{n}", "w-[n]", "w-full", "w-screen"]}
+  none={["w-auto", "w-min", "w-max", "w-fit"]}
+/>
+
+# Margin (/docs/tailwind/spacing/margin)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Margin */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "m-{n}",
+    "m-[n]",
+    "mx-{n}",
+    "mx-[n]",
+    "my-{n}",
+    "my-[n]",
+    "mt-{n}",
+    "mt-[n]",
+    "mr-{n}",
+    "mr-[n]",
+    "mb-{n}",
+    "mb-[n]",
+    "ml-{n}",
+    "ml-[n]",
+    "m-auto",
+    "mx-auto",
+    "my-auto",
+    "mt-auto",
+    "mr-auto",
+    "mb-auto",
+    "ml-auto",
+  ]}
+/>
+
+# Padding (/docs/tailwind/spacing/padding)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Padding */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "p-{n}",
+    "p-[n]",
+    "px-{n}",
+    "px-[n]",
+    "py-{n}",
+    "py-[n]",
+    "pt-{n}",
+    "pt-[n]",
+    "pr-{n}",
+    "pr-[n]",
+    "pb-{n}",
+    "pb-[n]",
+    "pl-{n}",
+    "pl-[n]",
+  ]}
+  none={[
+    "p-auto",
+    "px-auto",
+    "py-auto",
+    "pt-auto",
+    "pr-auto",
+    "pb-auto",
+    "pl-auto",
+  ]}
+/>
+
+# Space Between (/docs/tailwind/spacing/space-between)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Space Between */}
+
+## Usage
+
+<Usage />
+
+<Callout type="warn" title="CAUTION">
+`space-{n}` was temporary removed in `v4`. You can now use [`gap-*`](../flexbox/gap.mdx) utilities to add space between elements. We will re-add it once React Native adds support for `display: 'block'`. 
+</Callout>
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "space-{n}",
+    "space-[n]",
+    "space-x-{n}",
+    "space-x-[n]",
+    "space-y-{n}",
+    "space-y-[n]",
+    "space-x-reverse",
+    "space-y-reverse",
+  ]}
+/>
+
+# Fill (/docs/tailwind/svg/fill)
+
+import Compatibility from "../_compatibility.mdx";
+import RNSVG from "../_rn-svg.mdx";
+
+{/* # Fill */}
+
+## Usage
+
+<RNSVG />
+
+## Compatibility
+
+<Compatibility
+  supported={["fill-{n}", "fill-[n]"]}
+  none={["fill-inherit", "fill-current"]}
+/>
+
+# Stroke Width (/docs/tailwind/svg/stroke-width)
+
+import Compatibility from "../_compatibility.mdx";
+import RNSVG from "../_rn-svg.mdx";
+
+{/* # Stroke Width */}
+
+## Usage
+
+<RNSVG />
+
+## Compatibility
+
+<Compatibility supported={["stroke-{n}", "stroke-[n]"]} />
+
+# Stroke (/docs/tailwind/svg/stroke)
+
+import Compatibility from "../_compatibility.mdx";
+import RNSVG from "../_rn-svg.mdx";
+
+{/* # Stroke */}
+
+## Usage
+
+<RNSVG />
+
+## Compatibility
+
+<Compatibility
+  supported={["stroke-{n}", "stroke-[n]"]}
+  none={["stroke-inherit", "stroke-current"]}
+/>
+
+# Border Collapse (/docs/tailwind/tables/border-collapse)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Border Collapse */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["border-collapse", "border-separate"]} />
+
+# Border Spacing (/docs/tailwind/tables/border-spacing)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Border Spacing */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "border-spacing-[n]",
+    "border-spacing-{n}",
+    "border-spacing-x-[n]",
+    "border-spacing-x-{n}",
+    "border-spacing-y-[n]",
+    "border-spacing-y-{n}",
+  ]}
+/>
+
+# Caption Side (/docs/tailwind/tables/caption-side)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Caption Side */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["caption-top", "caption-bottom"]} />
+
+# Table Layout (/docs/tailwind/tables/table-layout)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Table Layout */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["table-auto", "table-fixed"]} />
+
+# Rotate (/docs/tailwind/transforms/rotate)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Rotate */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility supported={["rotate-{n}", "rotate-[n]"]} />
+
+<Callout type="tip">
+Always include the `deg` unit when using arbitrary styles or setting `rotate` values in your theme. e.g. `rotate-[90deg]`.
+
+React Native only supports `deg` as a unit for rotation.
+</Callout>
+
+# Scale (/docs/tailwind/transforms/scale)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Scale */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "scale-{n}",
+    "scale-[n]",
+    "scale-x-{n}",
+    "scale-x-[n]",
+    "scale-y-{n}",
+    "scale-y-[n]",
+  ]}
+/>
+
+# Skew (/docs/tailwind/transforms/skew)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Skew */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={["skew-x-{n}", "skew-x-[n]", "skew-y-{n}", "skew-y-[n]"]}
+/>
+
+# Transform Origin (/docs/tailwind/transforms/transform-origin)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Transform Origin */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "origin-center",
+    "origin-top",
+    "origin-top-right",
+    "origin-right",
+    "origin-bottom-right",
+    "origin-bottom",
+    "origin-bottom-left",
+    "origin-left",
+    "origin-top-left",
+  ]}
+/>
+
+## Contributors
+
+We are looking for contributors for the following:
+
+### feat: transform-origin
+
+Please support this [React Native Pull Request](https://github.com/facebook/react-native/pull/37606)
+
+### originX / originY
+
+`react-native-reanimated` supports `originX`/`originY`. We could support these properties until React Native gets proper support.
+
+# Translate (/docs/tailwind/transforms/translate)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Translate */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "translate-x-{n}",
+    "translate-x-[n]",
+    "translate-y-{n}",
+    "translate-y-[n]",
+  ]}
+/>
+
+# Animation (/docs/tailwind/transitions-animation/animation)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Animation */}
+
+## Usage
+
+<Usage />
+
+Animations are powered by `react-native-reanimated` and support keyframe-based CSS animations including `from`/`to` blocks, multi-step keyframes, per-frame timing functions (`cubic-bezier`), and transform animations.
+
+## Supported Features
+
+- Keyframe animations with `from`/`to` and percentage-based frames
+- Transform animations (rotate, translateX, translateY, scale, etc.)
+- Starting transform values (animating from a non-default transform)
+- Per-frame `animation-timing-function` (e.g. `cubic-bezier`)
+- Animations triggered by pseudo-classes (e.g. `:active`)
+- Stopping animations by removing the animation class
+- `animation-none` to halt an active animation
+- Changing `animation-duration` mid-animation (resets and restarts)
+- Infinite animations with `animation-iteration-count: infinite`
+
+## Compatibility
+
+<Compatibility
+  experimental={[
+    "animate-none",
+    "animate-spin",
+    "animate-ping",
+    "animate-pulse",
+    "animate-bounce",
+    "animate-[n]",
+  ]}
+/>
+
+## Known Limitations
+
+- Animations currently only work with the `style` prop (not all mapped props)
+- We are looking for contributors to help improve performance
+
+# Transition Delay (/docs/tailwind/transitions-animation/transition-delay)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Transition Delay */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility experimental={["delay-{n}", "delay-[n]"]} />
+
+# Transition Duration (/docs/tailwind/transitions-animation/transition-duration)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Transition Duration */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility experimental={["duration-{n}", "duration-[n]"]} />
+
+# Transition Property (/docs/tailwind/transitions-animation/transition-property)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Transition Property */}
+
+## Usage
+
+<Usage />
+
+Transitions are powered by `react-native-reanimated` and support smooth interpolation between style values when classes change.
+
+## Supported Features
+
+- Numeric property transitions (e.g. `width`, `height`, `opacity`)
+- Color transitions with proper interpolation
+- Transitions triggered by class changes on rerender
+- Transitions triggered by pseudo-class interactions (e.g. `:active`)
+- Transitions combined with group parent states
+
+## Compatibility
+
+<Compatibility
+  experimental={[
+    "transition",
+    "transition-all",
+    "transition-colors",
+    "transition-opacity",
+    "transition-transform",
+    "transition-{n}",
+    "transition-[n]",
+  ]}
+  none={["transition-shadow"]}
+/>
+
+# Transition Timing Function (/docs/tailwind/transitions-animation/transition-timing-function)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Transition Timing Function */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility experimental={["ease-{n}", "ease-[n]"]} />
+
+# Content (/docs/tailwind/typography/content)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Content */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["content-none"]} />
+
+# Font Family (/docs/tailwind/typography/font-family)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Font Family */}
+
+## Usage
+
+<Usage />
+
+React Native loads fonts differently between iOS and Android. We recommend following https://github.com/jsamr/react-native-font-demo to use fonts that work consistently on all platforms and allow you to use Tailwind CSS as expected.
+
+### Differences on Native
+
+React Native does not support fallback fonts. If an array of fonts are provided, Nativewind will only use the first font.
+
+### Adding fonts to your theme
+
+> Nativewind will not load/link fonts into your app. If you have any issues with the font family or weights not rendering, please first verify it works with inline styles.
+
+```tsx title="tailwind.config.js"
+import { platformSelect } from "nativewind/theme";
+
+module.exports = {
+  theme: {
+    extend: {
+      fontFamily: {
+        example: ["ExampleFontFamily"],
+        system: platformSelect({
+          ios: "Georgia",
+          android: "sans-serif",
+          default: "ui-sans-serif",
+        }),
+      },
+    },
+  },
+};
+```
+
+## Compatibility
+
+<Compatibility
+  supported={["font-sans", "font-serif", "font-mono", "font-[n]", "font-{n}"]}
+/>
+
+# Font Size (/docs/tailwind/typography/font-size)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Font Size */}
+
+## Usage
+
+<Usage />
+
+## `rem` scaling
+
+Tailwind CSS uses `rem` units for font sizes by default. To improve performance Nativewind will inline `rem` values on all platforms, except for Web. Nativewind uses the following `rem` for each platform
+
+- **Web**: `16px`
+- **All other platforms**: `14px` (matches React Native's default Text size)
+
+If you need dynamically scaling text for a section of your app, we recommend using a CSS variable.
+
+```tsx title="tailwind.config.js"
+module.exports = {
+  theme: {
+    extend: {
+      fontSize: {
+        dynamic: "var(--font-size-dynamic)",
+      },
+    },
+  },
+};
+```
+
+### Scaling text based upon screen width
+
+A common use case for dynamically scaling text is to scale text based upon the screen width. You can do this by using CSS variables and media queries.
+
+> Nativewind currently does not support media queries on `:root`, so you'll need to use a class.
+
+```css title="global.css"
+@media (min-width: 640px) {
+  .text-root {
+    --font-size-dynamic: 16px;
+  }
+}
+
+@media (min-width: 768px) {
+  .text-root {
+    --font-size-dynamic: 18px;
+  }
+}
+```
+
+```tsx title="App.tsx"
+export default App() {
+  return (
+    <Text className="text-root">
+      <Text className="text-[--font-size-dynamic]">I scale with screen width</Text>
+    </Text>
+  )
+}
+```
+
+### Changing the default inlined `rem` value
+
+You can the change the default `rem` value by setting `rem` in your `metro.config.js`
+
+```tsx title="metro.config.js"
+module.exports = withNativeWind({
+  input: "./global.css"
+  inlineRem: 16,
+});
+```
+
+### Disabling `inlineRem`
+
+You can disable the inlining behaviour by passing `false`
+
+```tsx title="metro.config.js"
+module.exports = withNativeWind({
+  inline: "./global.css"
+  inlineRem: false,
+});
+```
+
+You will then need to specify your own `rem` value in your CSS.
+
+```css title="global.css"
+:root {
+  font-size: 16px;
+}
+```
+
+## Compatibility
+
+<Compatibility supported={["text-{n}", "text-[n]", "text-base"]} />
+
+# Font Smoothing (/docs/tailwind/typography/font-smoothing)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Font Smoothing */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility supported={["antialiased", "subpixel-antialiased"]} />
+
+# Font Style (/docs/tailwind/typography/font-style)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Font Style */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"italic",
+"not-italic",
+]}
+/>
+
+# Font Variant Numeric (/docs/tailwind/typography/font-variant-numeric)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Font Variant Numeric */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "normal-nums",
+    "ordinal",
+    "slashed-zero",
+    "lining-nums",
+    "oldstyle-nums",
+    "proportional-nums",
+    "tabular-nums",
+    "diagonal-fractions",
+    "stacked-fractions",
+  ]}
+/>
+
+# Font Weight (/docs/tailwind/typography/font-weight)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Font Weight */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"font-thin",
+"font-extralight",
+"font-light",
+"font-normal",
+"font-medium",
+"font-semibold",
+"font-bold",
+"font-extrabold",
+"font-black",
+]}
+/>
+
+# Hyphens (/docs/tailwind/typography/hyphens)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Hyphens */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["hyphens-none", "hyphens-manual", "hyphens-auto"]} />
+
+# Letter Spacing (/docs/tailwind/typography/letter-spacing)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Letter Spacing */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"tracking-tighter",
+"tracking-tight",
+"tracking-normal",
+"tracking-wide",
+"tracking-wider",
+"tracking-widest",
+]}
+/>
+
+# Line Clamp (/docs/tailwind/typography/line-clamp)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Line Clamp */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={[
+    "line-clamp-1",
+    "line-clamp-2",
+    "line-clamp-3",
+    "line-clamp-4",
+    "line-clamp-5",
+    "line-clamp-6",
+    "line-clamp-none",
+  ]}
+/>
+
+# Line Height (/docs/tailwind/typography/line-height)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Line Height */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+React Native does not support the relative line height utilities due to lack of support for `em` units.
+
+<Compatibility
+supported={[
+"leading-{n}",
+"leading-[n]",
+]}
+none={[
+"leading-none",
+"leading-tight",
+"leading-snug",
+"leading-normal",
+"leading-relaxed",
+"leading-loose",
+]}
+/>
+
+# List Style Image (/docs/tailwind/typography/list-style-image)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # List Style Image */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility supported={["list-image-none"]} />
+
+# List Style Position (/docs/tailwind/typography/list-style-position)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # List Style Position */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility supported={["list-inside", "list-outside"]} />
+
+# List Style Type (/docs/tailwind/typography/list-style-type)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # List Style Type */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility supported={["list-none", "list-disc", "list-decimal"]} />
+
+# Text Transform (/docs/tailwind/typography/text-align)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Text Transform */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"uppercase",
+"lowercase",
+"capitalize",
+]}
+none={[
+"normal-case",
+]}
+/>
+
+# Text Color (/docs/tailwind/typography/text-color)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Text Color */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  supported={["text-{n}", "text-[n]"]}
+  none={["text-inherit", "text-current"]}
+/>
+
+<Callout type="note" title="textOpacity (native only)">
+For performance reasons, Nativewind renders with the `corePlugin` `textOpacity` disabled. This plugin allows text to dynamically change its opacity via the `--tw-text-opacity` variable. Instead, the opacity is set as a static value in the `color` property.
+
+If you need to use this feature, you can enable it by adding the following to your `tailwind.config.js` file:
+
+```js title=tailwind.config.js
+module.exports = {
+  /* ...  */
+  corePlugin: {
+    textOpacity: true,
+  },
+};
+```
+</Callout>
+
+# Text Decoration Color (/docs/tailwind/typography/text-decoration-color)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Text Decoration Color */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"decoration-{n}",
+"decoration-[n]",
+]}
+none={[
+"decoration-inherit",
+"decoration-current",
+]}
+/>
+
+# Text Decoration Style (/docs/tailwind/typography/text-decoration-style)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Text Decoration Style */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"decoration-solid",
+"decoration-double",
+"decoration-dotted",
+"decoration-dashed",
+]}
+none={[
+"decoration-wavy",
+]}
+/>
+
+# Text Decoration Thickness (/docs/tailwind/typography/text-decoration-thickness)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Text Decoration Thickness */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "decoration-auto",
+    "decoration-from-font",
+    "decoration-0",
+    "decoration-1",
+    "decoration-2",
+    "decoration-4",
+    "decoration-8",
+  ]}
+/>
+
+# Text Decoration (/docs/tailwind/typography/text-decoration)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Text Decoration */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"underline",
+"line-through",
+"no-underline",
+]}
+none={[
+"overline",
+]}
+/>
+
+# Text Indent (/docs/tailwind/typography/text-indent)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Text Indent */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["indent-[n]", "indent-{n}"]} />
+
+# Text Overflow (/docs/tailwind/typography/text-overflow)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Text Overflow */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility none={["truncate", "text-ellipsis", "text-clip"]} />
+
+# Text Align (/docs/tailwind/typography/text-transform)
+
+import Compatibility from "../\_compatibility.mdx"
+import Usage from "../\_usage.tsx"
+
+{/* # Text Align */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+supported={[
+"text-left",
+"text-center",
+"text-right",
+"text-justify",
+"text-start",
+"text-end",
+]}
+/>
+
+# Text Underline Offset (/docs/tailwind/typography/text-underline-offset)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Text Underline Offset */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "underline-offset-auto",
+    "underline-offset-0",
+    "underline-offset-1",
+    "underline-offset-2",
+    "underline-offset-4",
+    "underline-offset-8",
+  ]}
+/>
+
+# Vertical Align (/docs/tailwind/typography/vertical-align)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Vertical Align */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "align-baseline",
+    "align-top",
+    "align-middle",
+    "align-bottom",
+    "align-text-top",
+    "align-text-bottom",
+    "align-sub",
+    "align-super",
+  ]}
+/>
+
+# Whitespace (/docs/tailwind/typography/whitespace)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Whitespace */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "whitespace-normal",
+    "whitespace-nowrap",
+    "whitespace-pre",
+    "whitespace-pre-line",
+    "whitespace-pre-wrap",
+    "whitespace-break-spaces",
+  ]}
+/>
+
+# Word Break (/docs/tailwind/typography/word-break)
+
+import Compatibility from "../_compatibility.mdx";
+import Usage from "../_usage.tsx";
+
+{/* # Word Break */}
+
+## Usage
+
+<Usage />
+
+## Compatibility
+
+<Compatibility
+  none={[
+    "break-normal",
+    "word-break: normal",
+    "break-words",
+    "break-all",
+    "break-keep",
+  ]}
+/>

@@ -1,0 +1,22 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model ExpoDocs {
+  id        String                 @id
+  content   String?
+  embedding Unsupported("vector")?
+  createdAt DateTime               @default(now()) @db.Timestamptz(3)
+}
+
+model NativeWindDocs {
+  id        String                 @id
+  content   String?
+  embedding Unsupported("vector")?
+  createdAt DateTime               @default(now()) @db.Timestamptz(3)
+}
