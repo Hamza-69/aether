@@ -27,17 +27,28 @@ async function generateAndPublish(): Promise<void> {
 
   await prisma.expoDocs.deleteMany({})
 
-  for (const doc of documents) {
-    const embeddingResponse = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: doc.pageContent,
-    })
-    const embedding = embeddingResponse.data[0].embedding
-    const embeddingStr = `[${embedding.join(",")}]`
+  const BATCH_SIZE = 1000
+  const allEmbeddings: { index: number; embedding: number[] }[] = []
 
+  for (let i = 0; i < documents.length; i += BATCH_SIZE) {
+    const batch = documents.slice(i, i + BATCH_SIZE)
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1
+    const totalBatches = Math.ceil(documents.length / BATCH_SIZE)
+    console.log(`Embedding batch ${batchNum}/${totalBatches} (${batch.length} chunks)...`)
+
+    const response = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: batch.map((doc) => doc.pageContent),
+    })
+
+    allEmbeddings.push(...response.data.map((e) => ({ index: i + e.index, embedding: e.embedding })))
+  }
+
+  for (const { index, embedding } of allEmbeddings) {
+    const embeddingStr = `[${embedding.join(",")}]`
     await prisma.$executeRaw`
       INSERT INTO "ExpoDocs" (id, content, embedding, "createdAt")
-      VALUES (${crypto.randomUUID()}, ${doc.pageContent}, ${embeddingStr}::vector, NOW())
+      VALUES (${crypto.randomUUID()}, ${documents[index].pageContent}, ${embeddingStr}::vector, NOW())
     `
   }
 
