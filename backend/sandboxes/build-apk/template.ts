@@ -63,7 +63,7 @@ RUN cd /opt/frontend/android && \\
 
 # LAYER 4: Full dummy build to warm Maven + Gradle dependency cache, then clean up
 RUN cd /opt/frontend/android && \\
-    ./gradlew assembleRelease --no-daemon --parallel --build-cache --quiet && \\
+    ./gradlew dependencies --no-daemon --parallel --build-cache --quiet && \\
     cd /opt && rm -rf frontend
 `
 
