@@ -7,6 +7,16 @@ datasource db {
   provider = "postgresql"
 }
 
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+enum MessageType {
+  SUCCESS
+  ERROR
+}
+
 model ExpoDocs {
   id        String                 @id @default(cuid())
   content   String?
@@ -47,7 +57,8 @@ model APK {
 model Message {
   id         String    @id @default(cuid())
   content    String
-  role       String    // Consider using an Enum: USER, AGENT, SYSTEM
+  role       MessageRole
+  type       MessageType
   createdAt  DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
   
