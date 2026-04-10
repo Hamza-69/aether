@@ -4,6 +4,7 @@ import { inngest } from "./ai/inngest/client"
 import cors from "cors"
 import morgan from "morgan"
 import { projectsRouter } from "./controllers/projects"
+import { messagesRouter } from "./controllers/messages"
 import { codeAgentFunction } from "./ai/inngest/jobs/agent"
 
 const app = express()
@@ -19,9 +20,11 @@ app.use(morgan(':method :url :status :res[content-length] :response-time ms :bod
 
 app.use("/api/inngest", serve({ client: inngest, functions: [codeAgentFunction] }))
 app.use("/api/projects", projectsRouter)
+app.use("/api/projects/:projectId/messages", messagesRouter)
 
 console.log("[app] Registered routes:")
 console.log("  - /api/inngest")
 console.log("  - /api/projects")
+console.log("  - /api/projects/:projectId/messages")
 
 export default app

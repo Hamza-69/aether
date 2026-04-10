@@ -70,11 +70,12 @@ model Message {
 }
 
 model Fragment {
-  id        String   @id @default(cuid())
-  content   String
-  codeTarId String?  // Maps to your Tigris S3 key
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  id              String   @id @default(cuid())
+  content         String
+  frontendTarKey  String?
+  backendTarKey   String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
 
   // Required Back-relation
   messages  Message[]
