@@ -1,5 +1,6 @@
-#!/usr/bin/expect -f
+#!/bin/bash
 
+/usr/bin/expect -f - <<'EOF'
 set timeout 120
 
 spawn npx -y @react-native-reusables/cli@0.7.1 init -t minimal
@@ -19,3 +20,7 @@ expect "Git"
 send "y\r"
 
 expect eof
+EOF
+
+cd frontend
+npx -y @react-native-reusables/cli@0.7.1 add --all --yes --overwrite
