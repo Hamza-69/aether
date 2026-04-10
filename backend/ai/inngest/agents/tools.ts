@@ -4,60 +4,97 @@ import { getSandbox } from "../../../lib/utils"
 import { applyDiff } from "./diff_parser"
 import { matchExpoDocs, matchNativeWindDocs } from "../../rag/db/functions"
 import { createEmbedding } from "../../rag/utils"
+const esc = (str: string) => `'${str.replace(/'/g, "'\\''")}'`;
 
 export const grepTool = createTool({
   name: "grep",
-  description:
-    "Search for a pattern recursively in a directory. Returns matching lines with file paths and line numbers.",
+  description: [
+    "Search for a pattern in a directory. Built to avoid context-window blowouts.",
+    "Modes:",
+    " - 'content' (default): returns matching lines with line numbers.",
+    " - 'files_with_matches': returns only file paths.",
+    " - 'count': returns number of matches per file.",
+  ].join("\n"),
   parameters: z.object({
-    directory: z
-      .string()
-      .describe("Absolute path in the sandbox to search (e.g. /home/user/backend/src)"),
-    pattern: z.string().describe("String or regex pattern to search for"),
+    directory: z.string().describe("Absolute path to search"),
+    pattern: z.string().describe("String or regex pattern"),
+    mode: z.enum(["content", "files_with_matches", "count"]).default("content"),
+    include: z.string().optional().describe("Glob pattern to filter files (e.g., '*.ts', '*.tsx')"),
+    limit: z.number().int().default(100).describe("Max lines to return. Keep this low to avoid context explosion."),
   }),
-  handler: async ({ directory, pattern }, { step, network }) => {
-    return await step?.run(`grep:${directory}:${pattern}`, async () => {
+  handler: async ({ directory, pattern, mode, include, limit }, { step, network }) => {
+    return await step?.run(`grep:${mode}:${pattern}`, async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
-        // -r recursive, -n line numbers, -I skip binaries
-        const result = await sandbox.commands.run(
-          `grep -rnI "${pattern}" ${directory}`,
-        )
-        // exit code 1 means no matches — not an error
-        if (result.exitCode !== 0 && result.exitCode !== 1)
-          throw new Error(result.stderr)
-        return result.stdout || "(no matches)"
+        
+        let cmd = `grep -rI`;
+        
+        // 1. Claude uses rg which respects .gitignore. With grep, manually exclude black holes.
+        cmd += ` --exclude-dir={node_modules,.git,.next,dist,build,out,.expo,coverage}`;
+        cmd += ` --exclude=*{package-lock.json,yarn.lock,pnpm-lock.yaml,*.map,*.min.js}`;
+
+        // 2. Mirror Claude's output modes
+        if (mode === "files_with_matches") cmd += ` -l`;
+        else if (mode === "count") cmd += ` -c`;
+        else cmd += ` -n`; // content mode
+
+        // 3. Optional glob filtering
+        if (include) cmd += ` --include=${esc(include)}`;
+
+        // 4. Hard cap the output. 2>/dev/null suppresses SIGPIPE errors if head closes early.
+        const fullCmd = `${cmd} ${esc(pattern)} ${esc(directory)} 2>/dev/null | head -n ${limit}`;
+
+        const result = await sandbox.commands.run(fullCmd)
+        
+        const out = result.stdout.trim()
+        if (!out) return "(no matches)"
+        
+        const lines = out.split('\n')
+        if (lines.length >= limit) {
+           return out + `\n\n... [Results truncated to ${limit} lines. Use a stricter pattern, an 'include' glob, or 'files_with_matches' mode.]`
+        }
+
+        return out;
       } catch (e) {
-        return `Error: ${e}`
+        return `Error: ${e instanceof Error ? e.message : String(e)}`
       }
     })
   },
 })
 
-
-
 export const globTool = createTool({
   name: "glob",
-  description: "Find files matching a filename pattern inside a directory.",
+  // Updated description to explicitly guide the LLM away from breaking patterns
+  description: "Find files matching a filename pattern. Do NOT use brace expansion like '*.{ts,tsx}'. Keep it simple: '*.ts' or '**/*.ts'",
   parameters: z.object({
     directory: z
       .string()
       .describe("Root directory to search (e.g. /home/user/backend or /home/user/frontend)"),
     pattern: z
       .string()
-      .describe("Filename glob pattern (e.g. '*.ts', '*.tsx')"),
+      .describe("Filename glob pattern (e.g. '*.ts', '**/*.ts')"),
   }),
   handler: async ({ directory, pattern }, { step, network }) => {
     return await step?.run(`glob:${directory}:${pattern}`, async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
+        
+        // If the LLM passes directories in the pattern (e.g. `**/*.ts`), -name fails.
+        // We switch to -path and ensure it matches anywhere inside the directory.
+        const isPathMatch = pattern.includes("/");
+        const flag = isPathMatch ? "-path" : "-name";
+        const searchPattern = isPathMatch ? `*/${pattern}`.replace('/*/**', '/**') : pattern;
+
         const result = await sandbox.commands.run(
-          `find ${directory} -name "${pattern}" -type f`,
+          `find ${esc(directory)} -type f ${flag} ${esc(searchPattern)}`
         )
+        
         if (result.exitCode !== 0) throw new Error(result.stderr)
-        return result.stdout.split("\n").filter(Boolean)
+        
+        const files = result.stdout.split("\n").filter(Boolean)
+        return files.length > 0 ? files : ["(no matches)"]
       } catch (e) {
-        return `Error: ${e}`
+        return `Error: ${e instanceof Error ? e.message : e}`
       }
     })
   },
