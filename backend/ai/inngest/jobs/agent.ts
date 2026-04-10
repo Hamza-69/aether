@@ -52,7 +52,7 @@ export const codeAgentFunction = inngest.createFunction(
         }
 
         const backendResult = await sandbox.commands.run(
-          `mkdir -p /home/user/backend && curl -sL -o /tmp/backend.tar.gz "${backendUrl}" && tar -xzf /tmp/backend.tar.gz -C /home/user/backend && rm /tmp/backend.tar.gz && cd /home/user/backend && npm install`,
+          `mkdir -p /home/user/backend && curl -sL -o /tmp/backend.tar.gz "${backendUrl}" && tar -xzf /tmp/backend.tar.gz -C /home/user/backend && rm /tmp/backend.tar.gz && cd /home/user/backend && npm install && npx prisma generate`,
           { timeoutMs: 300_000 }
         )
         if (backendResult.exitCode !== 0) {
