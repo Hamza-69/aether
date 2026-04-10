@@ -19,7 +19,7 @@ export const grepTool = createTool({
     directory: z.string().describe("Absolute path to search"),
     pattern: z.string().describe("String or regex pattern"),
     mode: z.enum(["content", "files_with_matches", "count"]).default("content"),
-    include: z.string().optional().describe("Glob pattern to filter files (e.g., '*.ts', '*.tsx')"),
+    include: z.string().nullable().describe("Glob pattern to filter files (e.g., '*.ts', '*.tsx'). Pass null to search all files."),
     limit: z.number().int().default(100).describe("Max lines to return. Keep this low to avoid context explosion."),
   }),
   handler: async ({ directory, pattern, mode, include, limit }, { step, network }) => {
