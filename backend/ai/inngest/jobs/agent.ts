@@ -44,7 +44,7 @@ export const codeAgentFunction = inngest.createFunction(
         const backendUrl = await getStateDownloadUrl(latestFragment.backendTarKey!)
 
         const frontendResult = await sandbox.commands.run(
-          `mkdir -p /home/user/frontend && wget -qO /tmp/frontend.tar.gz "${frontendUrl}" && tar -xzf /tmp/frontend.tar.gz -C /home/user/frontend && rm /tmp/frontend.tar.gz && cd /home/user/frontend && npm install`,
+          `mkdir -p /home/user/frontend && curl -sL -o /tmp/frontend.tar.gz "${frontendUrl}" && tar -xzf /tmp/frontend.tar.gz -C /home/user/frontend && rm /tmp/frontend.tar.gz && cd /home/user/frontend && npm install`,
           { timeoutMs: 300_000 }
         )
         if (frontendResult.exitCode !== 0) {
@@ -52,7 +52,7 @@ export const codeAgentFunction = inngest.createFunction(
         }
 
         const backendResult = await sandbox.commands.run(
-          `mkdir -p /home/user/backend && wget -qO /tmp/backend.tar.gz "${backendUrl}" && tar -xzf /tmp/backend.tar.gz -C /home/user/backend && rm /tmp/backend.tar.gz && cd /home/user/backend && npm install`,
+          `mkdir -p /home/user/backend && curl -sL -o /tmp/backend.tar.gz "${backendUrl}" && tar -xzf /tmp/backend.tar.gz -C /home/user/backend && rm /tmp/backend.tar.gz && cd /home/user/backend && npm install`,
           { timeoutMs: 300_000 }
         )
         if (backendResult.exitCode !== 0) {
