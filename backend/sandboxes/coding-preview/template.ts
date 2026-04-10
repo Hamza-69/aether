@@ -13,10 +13,11 @@ RUN apt-get update && apt-get install -y \
     unzip \
     tar \
     git \
+    expect \
     && rm -rf /var/lib/apt/lists/*
 
-# Node.js 22
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+# Node.js 24
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -24,13 +25,13 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 RUN curl -L https://fly.io/install.sh | sh
 ENV PATH="/root/.fly/bin:$PATH"
 
-COPY ./deploy.sh /deploy.sh
-COPY ./setup-backend.sh /setup-backend.sh
-COPY ./setup-frontend.sh /setup-frontend.sh
-
-RUN chmod +x /deploy.sh /setup-backend.sh /setup-frontend.sh  
-
 WORKDIR /app
+
+COPY ./deploy.sh /app/deploy.sh
+COPY ./setup-backend.sh /app/setup-backend.sh
+COPY ./setup-frontend.sh /app/setup-frontend.sh
+
+RUN chmod +x /app/deploy.sh /app/setup-backend.sh /app/setup-frontend.sh  
 
 ENV NODE_ENV=production
 ENV PORT=3000

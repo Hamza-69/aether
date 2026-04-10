@@ -11,15 +11,21 @@ export const codeAgentFunction = inngest.createFunction(
   { id: "code-agent", triggers: [{ event: "code-agent/run" }] },
   async ({ event, step }) => {
     const SandboxId = await step.run("get-sandbox-id", async () => {
-      const sandbox = await Sandbox.create("vibable-nexjs-hamza-3")
+      const sandbox = await Sandbox.create("coding-preview")
       await sandbox.setTimeout(60_000 * 10 * 3) // 30 mins
       return sandbox.sandboxId
     })
     
     await step.run("setup-sandbox", async () => {
       const sandbox = await getSandbox(SandboxId)
-      await sandbox.commands.run("./setup-frontend.sh")
-      await sandbox.commands.run("./setup-backend.sh")
+      const frontendResult = await sandbox.commands.run("cd /home/user && /app/setup-frontend.sh", { timeoutMs: 300_000 })
+      if (frontendResult.exitCode !== 0) {
+        throw new Error(`setup-frontend.sh failed (exit ${frontendResult.exitCode}):\n${frontendResult.stderr}`)
+      }
+      const backendResult = await sandbox.commands.run("cd /home/user && /app/setup-backend.sh", { timeoutMs: 300_000 })
+      if (backendResult.exitCode !== 0) {
+        throw new Error(`setup-backend.sh failed (exit ${backendResult.exitCode}):\n${backendResult.stderr}`)
+      }
     })
 
     const state = createState<AgentState>(
@@ -85,10 +91,10 @@ export const codeAgentFunction = inngest.createFunction(
     
     const sandboxUrl = await step.run("run-project-and-get-sandbox-url", async () => {
       const sandbox = await getSandbox(SandboxId)
-      await sandbox.commands.run("cd frontend && npm install && npm run dev", {
+      await sandbox.commands.run("cd /home/user/frontend && npm install && npm run dev", {
         background: true
       })
-      await sandbox.commands.run("cd backend && npm install && npm run dev", {
+      await sandbox.commands.run("cd /home/user/backend && npm install && npm run dev", {
         background: true
       })
       const host = sandbox.getHost(8081)

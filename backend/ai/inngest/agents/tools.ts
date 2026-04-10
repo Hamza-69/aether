@@ -12,7 +12,7 @@ export const grepTool = createTool({
   parameters: z.object({
     directory: z
       .string()
-      .describe("Absolute path in the sandbox to search (e.g. /backend/src)"),
+      .describe("Absolute path in the sandbox to search (e.g. /home/user/backend/src)"),
     pattern: z.string().describe("String or regex pattern to search for"),
   }),
   handler: async ({ directory, pattern }, { step, network }) => {
@@ -42,7 +42,7 @@ export const globTool = createTool({
   parameters: z.object({
     directory: z
       .string()
-      .describe("Root directory to search (e.g. /backend or /frontend)"),
+      .describe("Root directory to search (e.g. /home/user/backend or /home/user/frontend)"),
     pattern: z
       .string()
       .describe("Filename glob pattern (e.g. '*.ts', '*.tsx')"),
@@ -77,16 +77,16 @@ export const applyPatchTool = createTool({
     filePath: z
       .string()
       .describe(
-        "Absolute path in the sandbox, must begin with /backend or /frontend",
+        "Absolute path in the sandbox, must begin with /home/user/backend or /home/user/frontend",
       ),
     mode: z
       .enum(["create", "delete", "patch"])
       .describe("Operation to perform"),
     contentOrDiff: z
       .string()
-      .optional()
+      .nullable()
       .describe(
-        "Full file content for 'create', or V4A diff string for 'patch'",
+        "Full file content for 'create', or V4A diff string for 'patch'. Pass null for 'delete'.",
       ),
   }),
   handler: async ({ filePath, mode, contentOrDiff }, { step, network }) => {
@@ -111,15 +111,15 @@ export const applyPatchTool = createTool({
         if (mode === "delete") return { success: true, filePath, mode }
 
         // Determine which project owns the file
-        const isBackend = filePath.startsWith("/backend")
-        const isFrontend = filePath.startsWith("/frontend")
+        const isBackend = filePath.startsWith("/home/user/backend")
+        const isFrontend = filePath.startsWith("/home/user/frontend")
 
         if (isBackend || isFrontend) {
           // backend: tsup build catches TS errors (matches `npm run build` in setup-backend.sh)
           // frontend: tsc --noEmit is lighter than a full Expo export
           const verifyCmd = isBackend
-            ? "cd /backend && npm run build 2>&1"
-            : "cd /frontend && npx tsc --noEmit 2>&1 && npx expo prebuild --platform android --clean && rm -rf android"
+            ? "cd /home/user/backend && npm run build 2>&1"
+            : "cd /home/user/frontend && npx tsc --noEmit 2>&1 && npx expo prebuild --platform android --clean && rm -rf android"
 
           const verify = await sandbox.commands.run(verifyCmd)
           if (verify.exitCode !== 0) {
