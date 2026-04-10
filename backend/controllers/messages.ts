@@ -4,9 +4,9 @@ import { inngest } from "../ai/inngest/client"
 
 export const messagesRouter = Router({ mergeParams: true })
 
-// POST /api/projects/:projectId/messages
+// POST /api/messages/:projectId
 // Sends a follow-up prompt to an existing project and fires the agent
-messagesRouter.post("/", async (req, res) => {
+messagesRouter.post("/:projectId", async (req, res) => {
   const { projectId } = req.params as { projectId: string }
   const { prompt } = req.body
 

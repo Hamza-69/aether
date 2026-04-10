@@ -20,11 +20,11 @@ app.use(morgan(':method :url :status :res[content-length] :response-time ms :bod
 
 app.use("/api/inngest", serve({ client: inngest, functions: [codeAgentFunction] }))
 app.use("/api/projects", projectsRouter)
-app.use("/api/projects/:projectId/messages", messagesRouter)
+app.use("/api/messages", messagesRouter)
 
 console.log("[app] Registered routes:")
 console.log("  - /api/inngest")
 console.log("  - /api/projects")
-console.log("  - /api/projects/:projectId/messages")
+console.log("  - /api/messages")
 
 export default app
