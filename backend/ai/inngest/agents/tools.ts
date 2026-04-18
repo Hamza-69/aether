@@ -5,6 +5,16 @@ import { applyDiff } from "./diff_parser"
 import { matchExpoDocs, matchNativeWindDocs } from "../../rag/db/functions"
 import { createEmbedding } from "../../rag/utils"
 const esc = (str: string) => `'${str.replace(/'/g, "'\\''")}'`;
+const MAX_BYTES = 200 * 1024; // 200 KB
+const cap = (output: string): string => {
+  if (Buffer.byteLength(output, 'utf8') <= MAX_BYTES) return output;
+  const truncated = Buffer.from(output).subarray(0, MAX_BYTES).toString('utf8');
+  return truncated + '\n\n... [Output truncated at 200 KB]';
+};
+// Inngest step IDs must be unique within a function run. Same tool called N times
+// would otherwise collide, so suffix every step with a fresh id.
+const stepId = (tool: string) =>
+  `${tool}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 export const grepTool = createTool({
   name: "grep",
@@ -23,14 +33,14 @@ export const grepTool = createTool({
     limit: z.number().int().default(100).describe("Max lines to return. Keep this low to avoid context explosion."),
   }),
   handler: async ({ directory, pattern, mode, include, limit }, { step, network }) => {
-    return await step?.run(`grep`, async () => {
+    return await step?.run(stepId("grep"), async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         
         let cmd = `grep -rI`;
         
-        // 1. Claude uses rg which respects .gitignore. With grep, manually exclude black holes.
-        cmd += ` --exclude-dir={node_modules,.git,.next,dist,build,out,.expo,coverage}`;
+        // 1. Exclude noisy dirs and generated/lock files
+        cmd += ` --exclude-dir={node_modules,.git,.expo,dist,build,.next,.nuxt,out,coverage,.cache,__pycache__,.pytest_cache,venv,.venv,vendor,.turbo,.parcel-cache,storybook-static,.sass-cache,target,.gradle,Pods,.dart_tool,generated,.svelte-kit,.output,.vercel,.netlify,tmp,.tmp}`;
         cmd += ` --exclude=*{package-lock.json,yarn.lock,pnpm-lock.yaml,*.map,*.min.js}`;
 
         // 2. Mirror Claude's output modes
@@ -48,13 +58,12 @@ export const grepTool = createTool({
         
         const out = result.stdout.trim()
         if (!out) return "(no matches)"
-        
-        const lines = out.split('\n')
-        if (lines.length >= limit) {
-           return out + `\n\n... [Results truncated to ${limit} lines. Use a stricter pattern, an 'include' glob, or 'files_with_matches' mode.]`
-        }
 
-        return out;
+        const lines = out.split('\n')
+        const lined = lines.length >= limit
+          ? out + `\n\n... [Results truncated to ${limit} lines. Use a stricter pattern, an 'include' glob, or 'files_with_matches' mode.]`
+          : out;
+        return cap(lined);
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`
       }
@@ -75,7 +84,7 @@ export const globTool = createTool({
       .describe("Filename glob pattern (e.g. '*.ts', '**/*.ts')"),
   }),
   handler: async ({ directory, pattern }, { step, network }) => {
-    return await step?.run(`glob`, async () => {
+    return await step?.run(stepId("glob"), async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         
@@ -85,14 +94,33 @@ export const globTool = createTool({
         const flag = isPathMatch ? "-path" : "-name";
         const searchPattern = isPathMatch ? `*/${pattern}`.replace('/*/**', '/**') : pattern;
 
+        const PRUNE_LIST = [
+          '.git', 'node_modules', '.expo', 'dist', 'build', '.next', '.nuxt',
+          'out', 'coverage', '.cache', '__pycache__', '.pytest_cache', 'venv',
+          '.venv', 'vendor', '.turbo', '.parcel-cache', 'storybook-static',
+          '.sass-cache', 'target', '.gradle', 'Pods', '.dart_tool', 'generated',
+          '.svelte-kit', '.output', '.vercel', '.netlify', 'tmp', '.tmp',
+        ];
+        const PRUNE_NAMES = PRUNE_LIST.map(d => `-name ${esc(d)}`).join(' -o ');
+
+        // Shell-level prune (fast: find never descends into these dirs)
         const result = await sandbox.commands.run(
-          `find ${esc(directory)} -type f ${flag} ${esc(searchPattern)}`
+          `find ${esc(directory)} -type d \\( ${PRUNE_NAMES} \\) -prune -o -type f ${flag} ${esc(searchPattern)} -print 2>/dev/null`
         )
-        
-        if (result.exitCode !== 0) throw new Error(result.stderr)
-        
-        const files = result.stdout.split("\n").filter(Boolean)
-        return files.length > 0 ? files : ["(no matches)"]
+
+        if (result.exitCode !== 0 && !result.stdout) throw new Error(result.stderr)
+
+        // Node-level post-filter (bulletproof: drops any path with a pruned segment, in case shell quoting fails)
+        const pruneRegex = new RegExp(
+          `(^|/)(${PRUNE_LIST.map(d => d.replace(/\./g, '\\.')).join('|')})(/|$)`
+        );
+        const files = result.stdout
+          .split("\n")
+          .filter(Boolean)
+          .filter(path => !pruneRegex.test(path));
+
+        const filesOut = files.length > 0 ? files.join("\n") : "(no matches)"
+        return cap(filesOut)
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : e}`
       }
@@ -127,7 +155,7 @@ export const applyPatchTool = createTool({
       ),
   }),
   handler: async ({ filePath, mode, contentOrDiff }, { step, network }) => {
-    return await step?.run(`applyPatch`, async () => {
+    return await step?.run(stepId("applyPatch"), async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
 
@@ -157,14 +185,14 @@ export const applyPatchTool = createTool({
           const verifyCmd = isBackend
             ? "cd /home/user/backend && npm run build 2>&1"
             : "cd /home/user/frontend && npx tsc --noEmit 2>&1 && npx expo prebuild --platform android --clean && rm -rf android"
-
+          
           const verify = await sandbox.commands.run(verifyCmd)
           if (verify.exitCode !== 0) {
             return {
               success: false,
               filePath,
               mode,
-              verifyError: verify.stdout + verify.stderr,
+              verifyError: cap(verify.stdout + verify.stderr),
             }
           }
         }
@@ -185,7 +213,7 @@ export const webSearchTool = createTool({
     query: z.string().describe("Search query"),
   }),
   handler: async ({ query }, { step }) => {
-    return await step?.run("webSearch", async () => {
+    return await step?.run(stepId("webSearch"), async () => {
       const response = await fetch(
         `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
         {
@@ -230,7 +258,7 @@ export const webFetchTool = createTool({
     url: z.string().describe("URL to fetch"),
   }),
   handler: async ({ url }, { step }) => {
-    return await step?.run("webFetch", async () => {
+    return await step?.run(stepId("webFetch"), async () => {
       const response = await fetch(url, {
         headers: {
           "User-Agent":
@@ -249,7 +277,7 @@ export const webFetchTool = createTool({
         .replace(/<[^>]+>/g, " ")
         .replace(/\s+/g, " ")
         .trim()
-      return clean.substring(0, 10_000)
+      return cap(clean.substring(0, 10_000))
     })
   },
 })
@@ -275,7 +303,7 @@ export const ragQueryTool = createTool({
       .describe("Maximum number of results to return"),
   }),
   handler: async ({ query, source, matchCount }, { step }) => {
-    return await step?.run("ragQuery", async () => {
+    return await step?.run(stepId("ragQuery"), async () => {
       const embedding = await createEmbedding(query)
       const threshold = 0.5
       const results: Array<{
@@ -307,7 +335,7 @@ export const ragQueryTool = createTool({
       }
 
       results.sort((a, b) => b.similarity - a.similarity)
-      return results.slice(0, matchCount)
+      return cap(JSON.stringify(results.slice(0, matchCount)))
     })
   },
 })
@@ -319,13 +347,13 @@ export const terminalTool = createTool({
     command: z.string(),
   }),
   handler: async ({ command }, { step, network }) => {
-    return await step?.run(`terminal`, async () => {
+    return await step?.run(stepId("terminal"), async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         const result = await sandbox.commands.run(command)
         return {
-          stdout: result.stdout,
-          stderr: result.stderr,
+          stdout: cap(result.stdout),
+          stderr: cap(result.stderr),
           exitCode: result.exitCode,
         }
       } catch (e) {
@@ -342,7 +370,7 @@ export const readFilesTool = createTool({
     files: z.array(z.string()),
   }),
   handler: async ({files}, {step, network}) => {
-    return await step?.run(`readFiles`, async () =>{
+    return await step?.run(stepId("readFiles"), async () =>{
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         const contents = []
@@ -350,7 +378,7 @@ export const readFilesTool = createTool({
           const content = await  sandbox.files.read(file)
           contents.push({path: file, content})
         }
-        return JSON.stringify(contents)
+        return cap(JSON.stringify(contents))
       } catch (e) {
         return "Error: "+e
       }

@@ -11,7 +11,7 @@ export const ProjectSchema = z
 
 export const CreateProjectBodySchema = z
   .object({
-    prompt: z.string().min(1).openapi({ example: "Build a todo app with React" }),
+    prompt: z.string().min(1).openapi({ example: "Build a todo app." }),
     name: z.string().optional().openapi({
       example: "my-todo-app",
       description: "Auto-derived from prompt if omitted",
