@@ -25,7 +25,7 @@ app.get("/openapi.json", (_req, res) => {
 })
 
 app.use(
-  "/reference",
+  "/api/docs",
   apiReference({
     theme: "purple",
     url: "/openapi.json",
@@ -40,7 +40,7 @@ console.log("[app] Registered routes:")
 console.log("  - /api/inngest")
 console.log("  - /api/projects")
 console.log("  - /api/messages")
-console.log("  - /reference (API docs)")
+console.log("  - /api/docs (API docs)")
 console.log("  - /openapi.json")
 
 export default app
