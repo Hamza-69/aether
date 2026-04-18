@@ -1,5 +1,5 @@
 import { createTool } from "@inngest/agent-kit"
-import { z } from "zod"
+import { z } from "../../../lib/zod"
 import { getSandbox } from "../../../lib/utils"
 import { applyDiff } from "./diff_parser"
 import { matchExpoDocs, matchNativeWindDocs } from "../../rag/db/functions"

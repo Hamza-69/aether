@@ -1,5 +1,5 @@
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from "@asteasolutions/zod-to-openapi"
-import { z } from "zod"
+import { z } from "./lib/zod"
 import {
   CreateProjectBodySchema,
   ErrorSchema,
