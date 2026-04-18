@@ -207,7 +207,8 @@ export const webSearchTool = createTool({
         (urlMatch = urlRegex.exec(html)) !== null
       ) {
         results.push({
-          url: urlMatch[1],
+          url: urlMatch[1] as string,
+          //@ts-ignore
           snippet: snippetMatch[1]
             .replace(/<[^>]+>/g, "")
             .replace(/&#x27;/g, "'")

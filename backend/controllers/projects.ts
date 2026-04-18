@@ -1,6 +1,7 @@
 import { Router } from "express"
 import { prisma } from "../lib/prisma"
 import { inngest } from "../ai/inngest/client"
+import { CreateProjectBodySchema } from "../models"
 
 export const projectsRouter = Router()
 
@@ -15,14 +16,15 @@ const toKebabCase = (str: string) =>
 
 projectsRouter.post("/", async (req, res) => {
   console.log(`[projectsRouter.POST] Received request to create project`)
-  const { name, prompt } = req.body
-  console.log(`[projectsRouter.POST] name=${name || "(none)"}, prompt length: ${prompt?.length || 0}`)
 
-  if (!prompt) {
-    console.warn(`[projectsRouter.POST] Validation failed - prompt is required`)
-    res.status(400).json({ error: "prompt is required" })
+  const parsed = CreateProjectBodySchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" })
     return
   }
+
+  const { prompt, name } = parsed.data
+  console.log(`[projectsRouter.POST] name=${name || "(none)"}, prompt length: ${prompt.length}`)
 
   const projectName = name?.trim() || toKebabCase(prompt)
   console.log(`[projectsRouter.POST] Resolved project name: "${projectName}"`)

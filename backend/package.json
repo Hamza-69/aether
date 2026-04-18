@@ -17,6 +17,7 @@
     "prisma:studio": "prisma studio"
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^8.5.0",
     "@aws-sdk/client-s3": "^3.1028.0",
     "@aws-sdk/s3-request-presigner": "^3.1028.0",
     "@inngest/agent-kit": "^0.13.2",
@@ -24,6 +25,7 @@
     "@langchain/textsplitters": "^1.0.1",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
+    "@scalar/express-api-reference": "^0.9.9",
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
     "e2b": "^2.19.0",

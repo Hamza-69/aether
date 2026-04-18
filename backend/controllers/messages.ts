@@ -1,19 +1,21 @@
 import { Router } from "express"
 import { prisma } from "../lib/prisma"
 import { inngest } from "../ai/inngest/client"
+import { SendMessageBodySchema } from "../models"
 
 export const messagesRouter = Router({ mergeParams: true })
 
 // POST /api/messages/:projectId
-// Sends a follow-up prompt to an existing project and fires the agent
 messagesRouter.post("/:projectId", async (req, res) => {
   const { projectId } = req.params as { projectId: string }
-  const { prompt } = req.body
 
-  if (!prompt) {
-    res.status(400).json({ error: "prompt is required" })
+  const parsed = SendMessageBodySchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" })
     return
   }
+
+  const { prompt } = parsed.data
 
   const project = await prisma.project.findUnique({ where: { id: projectId } })
   if (!project) {

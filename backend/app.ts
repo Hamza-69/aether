@@ -6,6 +6,8 @@ import morgan from "morgan"
 import { projectsRouter } from "./controllers/projects"
 import { messagesRouter } from "./controllers/messages"
 import { codeAgentFunction } from "./ai/inngest/jobs/agent"
+import { apiReference } from "@scalar/express-api-reference"
+import { openApiSpec } from "./openapi-registry"
 
 const app = express()
 
@@ -18,6 +20,18 @@ morgan.token('body', (req: express.Request) => {
 
 app.use(morgan(':method :url :status :res[content-length] :response-time ms :body'))
 
+app.get("/openapi.json", (_req, res) => {
+  res.json(openApiSpec)
+})
+
+app.use(
+  "/reference",
+  apiReference({
+    theme: "purple",
+    url: "/openapi.json",
+  }),
+)
+
 app.use("/api/inngest", serve({ client: inngest, functions: [codeAgentFunction] }))
 app.use("/api/projects", projectsRouter)
 app.use("/api/messages", messagesRouter)
@@ -26,5 +40,7 @@ console.log("[app] Registered routes:")
 console.log("  - /api/inngest")
 console.log("  - /api/projects")
 console.log("  - /api/messages")
+console.log("  - /reference (API docs)")
+console.log("  - /openapi.json")
 
 export default app
