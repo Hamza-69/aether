@@ -23,7 +23,7 @@ export const grepTool = createTool({
     limit: z.number().int().default(100).describe("Max lines to return. Keep this low to avoid context explosion."),
   }),
   handler: async ({ directory, pattern, mode, include, limit }, { step, network }) => {
-    return await step?.run(`grep:${mode}:${pattern}`, async () => {
+    return await step?.run(`grep`, async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         
@@ -75,7 +75,7 @@ export const globTool = createTool({
       .describe("Filename glob pattern (e.g. '*.ts', '**/*.ts')"),
   }),
   handler: async ({ directory, pattern }, { step, network }) => {
-    return await step?.run(`glob:${directory}:${pattern}`, async () => {
+    return await step?.run(`glob`, async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         
@@ -127,7 +127,7 @@ export const applyPatchTool = createTool({
       ),
   }),
   handler: async ({ filePath, mode, contentOrDiff }, { step, network }) => {
-    return await step?.run(`applyPatch-${mode}:${filePath}`, async () => {
+    return await step?.run(`applyPatch`, async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
 
@@ -319,7 +319,7 @@ export const terminalTool = createTool({
     command: z.string(),
   }),
   handler: async ({ command }, { step, network }) => {
-    return await step?.run(`terminal:${command}`, async () => {
+    return await step?.run(`terminal`, async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         const result = await sandbox.commands.run(command)
@@ -342,7 +342,7 @@ export const readFilesTool = createTool({
     files: z.array(z.string()),
   }),
   handler: async ({files}, {step, network}) => {
-    return await step?.run(`readFiles:${files.join(",")}`, async () =>{
+    return await step?.run(`readFiles`, async () =>{
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         const contents = []
