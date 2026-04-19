@@ -186,17 +186,19 @@ export const applyPatchTool = createTool({
             ? "cd /home/user/backend && npm run build 2>&1"
             : "cd /home/user/frontend && npx tsc --noEmit 2>&1 && npx expo prebuild --platform android --clean && rm -rf android"
           
-          const verify = await sandbox.commands.run(verifyCmd)
-          if (verify.exitCode !== 0) {
+          let verify
+          try {
+            verify = await sandbox.commands.run(verifyCmd)
+          } catch (e) {
             return {
               success: false,
               filePath,
               mode,
+              //@ts-ignore
               verifyError: cap(verify.stdout + verify.stderr),
             }
           }
         }
-
         return { success: true, filePath, mode }
       } catch (e) {
         return `Error: ${e}`
@@ -348,16 +350,18 @@ export const terminalTool = createTool({
   }),
   handler: async ({ command }, { step, network }) => {
     return await step?.run(stepId("terminal"), async () => {
+      let result
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
-        const result = await sandbox.commands.run(command)
+        result = await sandbox.commands.run(command)
         return {
           stdout: cap(result.stdout),
           stderr: cap(result.stderr),
           exitCode: result.exitCode,
         }
       } catch (e) {
-        return { stdout: "", stderr: `Command failed: ${e}`, exitCode: 1 }
+        // @ts-ignore
+        return { stdout: cap(result.stdout), stderr: cap(result.stderr), exitCode: result.exitCode }
       }
     })
   },

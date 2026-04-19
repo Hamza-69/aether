@@ -6,7 +6,12 @@ import { FRAGMENT_TITLE_PROMPT } from "../prompts"
 import { prisma } from "../../../lib/prisma"
 import { codeAgent } from "../agents/agent"
 import { AgentState } from "../agents/agent"
-import { uploadState, getStateDownloadUrl } from "../../../lib/storage"
+import {
+  uploadState,
+  getStateDownloadUrl,
+  ZERO_STATE_FRONTEND_KEY,
+  ZERO_STATE_BACKEND_KEY,
+} from "../../../lib/storage"
 
 export const codeAgentFunction = inngest.createFunction(
   { id: "code-agent", triggers: [{ event: "code-agent/run" }] },
@@ -38,36 +43,26 @@ export const codeAgentFunction = inngest.createFunction(
     await step.run("setup-or-restore-sandbox", async () => {
       const sandbox = await getSandbox(SandboxId)
 
-      if (latestFragment) {
-        // Resume from previous state: download tars from Tigris and unpack
-        const frontendUrl = await getStateDownloadUrl(latestFragment.frontendTarKey!)
-        const backendUrl = await getStateDownloadUrl(latestFragment.backendTarKey!)
+      const frontendKey = latestFragment?.frontendTarKey ?? ZERO_STATE_FRONTEND_KEY
+      const backendKey = latestFragment?.backendTarKey ?? ZERO_STATE_BACKEND_KEY
 
-        const frontendResult = await sandbox.commands.run(
-          `mkdir -p /home/user/frontend && curl -sL -o /tmp/frontend.tar.gz "${frontendUrl}" && tar -xzf /tmp/frontend.tar.gz -C /home/user/frontend && rm /tmp/frontend.tar.gz && cd /home/user/frontend && npm install`,
-          { timeoutMs: 300_000 }
-        )
-        if (frontendResult.exitCode !== 0) {
-          throw new Error(`Frontend restore failed (exit ${frontendResult.exitCode}):\n${frontendResult.stderr}`)
-        }
+      const frontendUrl = await getStateDownloadUrl(frontendKey)
+      const backendUrl = await getStateDownloadUrl(backendKey)
 
-        const backendResult = await sandbox.commands.run(
-          `mkdir -p /home/user/backend && curl -sL -o /tmp/backend.tar.gz "${backendUrl}" && tar -xzf /tmp/backend.tar.gz -C /home/user/backend && rm /tmp/backend.tar.gz && cd /home/user/backend && npm install && npx prisma generate`,
-          { timeoutMs: 300_000 }
-        )
-        if (backendResult.exitCode !== 0) {
-          throw new Error(`Backend restore failed (exit ${backendResult.exitCode}):\n${backendResult.stderr}`)
-        }
-      } else {
-        // Fresh project: run setup scripts
-        const frontendResult = await sandbox.commands.run("cd /home/user && /app/setup-frontend.sh", { timeoutMs: 300_000 })
-        if (frontendResult.exitCode !== 0) {
-          throw new Error(`setup-frontend.sh failed (exit ${frontendResult.exitCode}):\n${frontendResult.stderr}`)
-        }
-        const backendResult = await sandbox.commands.run("cd /home/user && /app/setup-backend.sh", { timeoutMs: 300_000 })
-        if (backendResult.exitCode !== 0) {
-          throw new Error(`setup-backend.sh failed (exit ${backendResult.exitCode}):\n${backendResult.stderr}`)
-        }
+      const frontendResult = await sandbox.commands.run(
+        `mkdir -p /home/user/frontend && curl -sL -o /tmp/frontend.tar.gz "${frontendUrl}" && tar -xzf /tmp/frontend.tar.gz -C /home/user/frontend && rm /tmp/frontend.tar.gz && cd /home/user/frontend && npm install`,
+        { timeoutMs: 300_000 }
+      )
+      if (frontendResult.exitCode !== 0) {
+        throw new Error(`Frontend restore failed (exit ${frontendResult.exitCode}):\n${frontendResult.stderr}`)
+      }
+
+      const backendResult = await sandbox.commands.run(
+        `mkdir -p /home/user/backend && curl -sL -o /tmp/backend.tar.gz "${backendUrl}" && tar -xzf /tmp/backend.tar.gz -C /home/user/backend && rm /tmp/backend.tar.gz && cd /home/user/backend && npm install && npx prisma generate`,
+        { timeoutMs: 300_000 }
+      )
+      if (backendResult.exitCode !== 0) {
+        throw new Error(`Backend restore failed (exit ${backendResult.exitCode}):\n${backendResult.stderr}`)
       }
     })
 
