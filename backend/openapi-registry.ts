@@ -4,6 +4,7 @@ import {
   CreateProjectBodySchema,
   ErrorSchema,
   MessageSchema,
+  ProjectPreviewSchema,
   ProjectSchema,
   SendMessageBodySchema,
 } from "./models"
@@ -11,8 +12,30 @@ import {
 const registry = new OpenAPIRegistry()
 
 registry.register("Project", ProjectSchema)
+registry.register("ProjectPreview", ProjectPreviewSchema)
 registry.register("Message", MessageSchema)
 registry.register("Error", ErrorSchema)
+
+registry.registerPath({
+  method: "get",
+  path: "/api/projects",
+  tags: ["Projects"],
+  summary: "List projects",
+  responses: {
+    200: {
+      description: "Projects list",
+      content: {
+        "application/json": {
+          schema: z.object({ projects: z.array(ProjectSchema) }),
+        },
+      },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
 
 registry.registerPath({
   method: "post",
@@ -36,6 +59,34 @@ registry.registerPath({
     },
     400: {
       description: "Bad request",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "post",
+  path: "/api/projects/{projectId}/preview",
+  tags: ["Projects"],
+  summary: "Run project preview from latest fragment",
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+  },
+  responses: {
+    200: {
+      description: "Preview started",
+      content: {
+        "application/json": {
+          schema: ProjectPreviewSchema,
+        },
+      },
+    },
+    404: {
+      description: "Project or runnable fragment not found",
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {

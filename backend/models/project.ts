@@ -18,3 +18,9 @@ export const CreateProjectBodySchema = z
     }),
   })
   .openapi("CreateProjectBody")
+
+export const ProjectPreviewSchema = z
+  .object({
+    url: z.string().url().openapi({ example: "https://8081.sandbox-id.e2b.dev" }),
+  })
+  .openapi("ProjectPreview")
