@@ -6,7 +6,9 @@ import { conversationHistoryAdapter } from "./history"
 import {
   grepTool,
   globTool,
-  applyPatchTool,
+  editFileTool,
+  createFileTool,
+  deleteFileTool,
   webSearchTool,
   webFetchTool,
   ragQueryTool,
@@ -22,7 +24,9 @@ export interface AgentState {
 export const tools = [
   grepTool,
   globTool,
-  applyPatchTool,
+  editFileTool,
+  createFileTool,
+  deleteFileTool,
   webSearchTool,
   webFetchTool,
   ragQueryTool,

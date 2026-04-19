@@ -1,7 +1,6 @@
 import { createTool } from "@inngest/agent-kit"
 import { z } from "../../../lib/zod"
 import { getSandbox } from "../../../lib/utils"
-import { applyDiff } from "./diff_parser"
 import { matchExpoDocs, matchNativeWindDocs } from "../../rag/db/functions"
 import { createEmbedding } from "../../rag/utils"
 const esc = (str: string) => `'${str.replace(/'/g, "'\\''")}'`;
@@ -26,10 +25,27 @@ const asCommandResult = (e: unknown): { stdout: string; stderr: string; exitCode
   };
 };
 
+// Noisy dirs/files excluded from every grep. Listed plainly (not brace-expanded) so
+// we work under any POSIX shell — some sandbox shells don't brace-expand.
+const GREP_EXCLUDE_DIRS = [
+  'node_modules', '.git', '.expo', 'dist', 'build', '.next', '.nuxt',
+  'out', 'coverage', '.cache', '__pycache__', '.pytest_cache', 'venv',
+  '.venv', 'vendor', '.turbo', '.parcel-cache', 'storybook-static',
+  '.sass-cache', 'target', '.gradle', 'Pods', '.dart_tool', 'generated',
+  '.svelte-kit', '.output', '.vercel', '.netlify', 'tmp', '.tmp',
+];
+const GREP_EXCLUDE_FILES = [
+  'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', '*.map', '*.min.js',
+];
+
 export const grepTool = createTool({
   name: "grep",
   description: [
     "Search for a pattern in a directory. Built to avoid context-window blowouts.",
+    "Pattern is an EXTENDED regex by default (|, (), +, ?, {} work unescaped).",
+    "Set fixedStrings=true to match the pattern literally.",
+    "Smart-case: an all-lowercase pattern matches case-insensitively; any uppercase",
+    "flips it back to case-sensitive. Override with caseSensitive.",
     "Modes:",
     " - 'content' (default): returns matching lines with line numbers.",
     " - 'files_with_matches': returns only file paths.",
@@ -37,35 +53,46 @@ export const grepTool = createTool({
   ].join("\n"),
   parameters: z.object({
     directory: z.string().describe("Absolute path to search"),
-    pattern: z.string().describe("String or regex pattern"),
+    pattern: z.string().describe("Extended-regex pattern, or a literal string if fixedStrings=true"),
     mode: z.enum(["content", "files_with_matches", "count"]).default("content"),
     include: z.string().nullable().describe("Glob pattern to filter files (e.g., '*.ts', '*.tsx'). Pass null to search all files."),
     limit: z.number().int().default(100).describe("Max lines to return. Keep this low to avoid context explosion."),
+    fixedStrings: z.boolean().default(false).describe("Treat pattern as a literal string instead of a regex. Use this when searching for code that contains [, ], (, ), |, etc."),
+    caseSensitive: z.boolean().nullable().describe("Force case sensitivity on/off. Pass null for smart-case (sensitive only if pattern contains uppercase)."),
   }),
-  handler: async ({ directory, pattern, mode, include, limit }, { step, network }) => {
+  handler: async ({ directory, pattern, mode, include, limit, fixedStrings, caseSensitive }, { step, network }) => {
     return await step?.run(stepId("grep"), async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
-        
-        let cmd = `grep -rI`;
-        
-        // 1. Exclude noisy dirs and generated/lock files
-        cmd += ` --exclude-dir={node_modules,.git,.expo,dist,build,.next,.nuxt,out,coverage,.cache,__pycache__,.pytest_cache,venv,.venv,vendor,.turbo,.parcel-cache,storybook-static,.sass-cache,target,.gradle,Pods,.dart_tool,generated,.svelte-kit,.output,.vercel,.netlify,tmp,.tmp}`;
-        cmd += ` --exclude=*{package-lock.json,yarn.lock,pnpm-lock.yaml,*.map,*.min.js}`;
 
-        // 2. Mirror Claude's output modes
+        // -r recursive, -I skip binaries, -E extended regex (sane |, (), +, ?, {})
+        // Swap -E for -F when the caller wants a literal match.
+        let cmd = fixedStrings ? `grep -rIF` : `grep -rIE`;
+
+        // Smart-case: lowercase pattern → case-insensitive; otherwise case-sensitive.
+        // caseSensitive=true/false forces the choice.
+        const effectiveCaseSensitive = caseSensitive === null || caseSensitive === undefined
+          ? /[A-Z]/.test(pattern)
+          : caseSensitive;
+        if (!effectiveCaseSensitive) cmd += ` -i`;
+
+        // Excludes — one flag per entry so it works under sh/dash (no brace expansion).
+        for (const dir of GREP_EXCLUDE_DIRS) cmd += ` --exclude-dir=${esc(dir)}`;
+        for (const file of GREP_EXCLUDE_FILES) cmd += ` --exclude=${esc(file)}`;
+
+        // Output mode
         if (mode === "files_with_matches") cmd += ` -l`;
         else if (mode === "count") cmd += ` -c`;
         else cmd += ` -n`; // content mode
 
-        // 3. Optional glob filtering
+        // Optional glob filtering
         if (include) cmd += ` --include=${esc(include)}`;
 
-        // 4. Hard cap the output. 2>/dev/null suppresses SIGPIPE errors if head closes early.
-        const fullCmd = `${cmd} ${esc(pattern)} ${esc(directory)} 2>/dev/null | head -n ${limit}`;
+        // Hard cap the output. 2>/dev/null suppresses SIGPIPE if head closes early.
+        const fullCmd = `${cmd} -e ${esc(pattern)} ${esc(directory)} 2>/dev/null | head -n ${limit}`;
 
         const result = await sandbox.commands.run(fullCmd)
-        
+
         const out = result.stdout.trim()
         if (!out) return "(no matches)"
 
@@ -138,81 +165,178 @@ export const globTool = createTool({
   },
 })
 
-export const applyPatchTool = createTool({
-  name: "applyPatch",
+// Shared verification for create/edit writes. Runs the project-appropriate
+// type-check after a write; returns ok:false with compiler output on failure.
+type VerifyResult =
+  | { ok: true }
+  | { ok: false; verifyStdout: string; verifyStderr: string; verifyExitCode: number }
+
+async function verifyAfterWrite(
+  sandbox: Awaited<ReturnType<typeof getSandbox>>,
+  filePath: string,
+): Promise<VerifyResult> {
+  const isBackend = filePath.startsWith("/home/user/backend")
+  const isFrontend = filePath.startsWith("/home/user/frontend")
+  if (!isBackend && !isFrontend) return { ok: true }
+
+  const verifyCmd = isBackend
+    ? "cd /home/user/backend && npm run build 2>&1"
+    : "cd /home/user/frontend && npx tsc --noEmit 2>&1 && npx expo prebuild --platform android --clean && rm -rf android"
+
+  try {
+    await sandbox.commands.run(verifyCmd)
+    return { ok: true }
+  } catch (e) {
+    const v = asCommandResult(e)
+    return {
+      ok: false,
+      verifyStdout: cap(v.stdout),
+      verifyStderr: cap(v.stderr),
+      verifyExitCode: v.exitCode,
+    }
+  }
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) return 0
+  let count = 0
+  let idx = 0
+  while ((idx = haystack.indexOf(needle, idx)) !== -1) {
+    count += 1
+    idx += needle.length
+  }
+  return count
+}
+
+export const editFileTool = createTool({
+  name: "editFile",
   description: [
-    "Create, delete, or patch a file in the sandbox.",
-    "  • create – write a new file (supply full content in contentOrDiff).",
-    "  • delete – remove a file.",
-    "  • patch  – apply a V4A diff to an existing file (supply the diff in contentOrDiff).",
-    "After a successful write the affected project is type-checked automatically.",
-    "If type-checking fails the tool returns success:false with the compiler output.",
+    "Edit an existing file by exact string replacement.",
+    "oldString must appear VERBATIM in the file (whitespace-sensitive, including",
+    "leading indentation and trailing newlines you intend to match).",
+    "With replaceAll=false (default) oldString must be UNIQUE in the file — include",
+    "enough surrounding lines to disambiguate. With replaceAll=true every occurrence",
+    "is replaced (at least one must match).",
+    "After the write, the affected project is type-checked; returns success:false",
+    "with compiler output on failure.",
   ].join("\n"),
   parameters: z.object({
     filePath: z
       .string()
-      .describe(
-        "Absolute path in the sandbox, must begin with /home/user/backend or /home/user/frontend",
-      ),
-    mode: z
-      .enum(["create", "delete", "patch"])
-      .describe("Operation to perform"),
-    contentOrDiff: z
+      .describe("Absolute path in the sandbox (/home/user/backend/... or /home/user/frontend/...)."),
+    oldString: z
       .string()
-      .nullable()
-      .describe(
-        "Full file content for 'create', or V4A diff string for 'patch'. Pass null for 'delete'.",
-      ),
+      .describe("Exact text to find. Must be unique in the file unless replaceAll=true."),
+    newString: z
+      .string()
+      .describe("Replacement text. May be empty to delete oldString."),
+    replaceAll: z
+      .boolean()
+      .default(false)
+      .describe("Replace every occurrence instead of requiring a unique match."),
   }),
-  handler: async ({ filePath, mode, contentOrDiff }, { step, network }) => {
-    return await step?.run(stepId("applyPatch"), async () => {
+  handler: async ({ filePath, oldString, newString, replaceAll }, { step, network }) => {
+    return await step?.run(stepId("editFile"), async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
+        const current = await sandbox.files.read(filePath)
 
-        if (mode === "create") {
-          if (!contentOrDiff) throw new Error("contentOrDiff required for create")
-          await sandbox.files.write(filePath, contentOrDiff)
-        } else if (mode === "delete") {
-          await sandbox.commands.run(`rm -f ${filePath}`)
-        } else {
-          // patch — read current content, apply V4A diff, write back
-          if (!contentOrDiff) throw new Error("contentOrDiff required for patch")
-          const current = await sandbox.files.read(filePath)
-          const patched = applyDiff(current, contentOrDiff, "default")
-          await sandbox.files.write(filePath, patched)
+        if (oldString === newString) {
+          return `Error: oldString and newString are identical for ${filePath}.`
+        }
+        if (!current.includes(oldString)) {
+          return `Error: oldString not found in ${filePath}. Re-read the file and include more surrounding context, or check whitespace.`
         }
 
-        // Skip verification for deletes — nothing left to type-check
-        if (mode === "delete") return { success: true, filePath, mode }
+        let updated: string
+        if (replaceAll) {
+          updated = current.split(oldString).join(newString)
+        } else {
+          const occurrences = countOccurrences(current, oldString)
+          if (occurrences > 1) {
+            return `Error: oldString matches ${occurrences} places in ${filePath}. Extend oldString with surrounding lines to make it unique, or pass replaceAll=true.`
+          }
+          const idx = current.indexOf(oldString)
+          updated = current.slice(0, idx) + newString + current.slice(idx + oldString.length)
+        }
 
-        // Determine which project owns the file
-        const isBackend = filePath.startsWith("/home/user/backend")
-        const isFrontend = filePath.startsWith("/home/user/frontend")
+        await sandbox.files.write(filePath, updated)
 
-        if (isBackend || isFrontend) {
-          // backend: tsup build catches TS errors (matches `npm run build` in setup-backend.sh)
-          // frontend: tsc --noEmit is lighter than a full Expo export
-          const verifyCmd = isBackend
-            ? "cd /home/user/backend && npm run build 2>&1"
-            : "cd /home/user/frontend && npx tsc --noEmit 2>&1 && npx expo prebuild --platform android --clean && rm -rf android"
-          
-          try {
-            await sandbox.commands.run(verifyCmd)
-          } catch (e) {
-            const v = asCommandResult(e)
-            return {
-              success: false,
-              filePath,
-              mode,
-              verifyStdout: cap(v.stdout),
-              verifyStderr: cap(v.stderr),
-              verifyExitCode: v.exitCode,
-            }
+        const verify = await verifyAfterWrite(sandbox, filePath)
+        if (!verify.ok) {
+          return {
+            success: false,
+            filePath,
+            mode: "edit" as const,
+            verifyStdout: verify.verifyStdout,
+            verifyStderr: verify.verifyStderr,
+            verifyExitCode: verify.verifyExitCode,
           }
         }
-        return { success: true, filePath, mode }
+        return { success: true, filePath, mode: "edit" as const }
       } catch (e) {
-        return `Error: ${e}`
+        return `Error: ${e instanceof Error ? e.message : String(e)}`
+      }
+    })
+  },
+})
+
+export const createFileTool = createTool({
+  name: "createFile",
+  description: [
+    "Create a new file (or overwrite an existing one) with the given full content.",
+    "After the write, the affected project is type-checked; returns success:false",
+    "with compiler output on failure.",
+  ].join("\n"),
+  parameters: z.object({
+    filePath: z
+      .string()
+      .describe("Absolute path in the sandbox (/home/user/backend/... or /home/user/frontend/...)."),
+    content: z
+      .string()
+      .describe("Full file contents, exactly as they should appear on disk."),
+  }),
+  handler: async ({ filePath, content }, { step, network }) => {
+    return await step?.run(stepId("createFile"), async () => {
+      try {
+        const sandbox = await getSandbox(network.state.data.SandboxId)
+        await sandbox.files.write(filePath, content)
+
+        const verify = await verifyAfterWrite(sandbox, filePath)
+        if (!verify.ok) {
+          return {
+            success: false,
+            filePath,
+            mode: "create" as const,
+            verifyStdout: verify.verifyStdout,
+            verifyStderr: verify.verifyStderr,
+            verifyExitCode: verify.verifyExitCode,
+          }
+        }
+        return { success: true, filePath, mode: "create" as const }
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`
+      }
+    })
+  },
+})
+
+export const deleteFileTool = createTool({
+  name: "deleteFile",
+  description: "Delete a file from the sandbox. No type-check runs after deletion.",
+  parameters: z.object({
+    filePath: z
+      .string()
+      .describe("Absolute path in the sandbox."),
+  }),
+  handler: async ({ filePath }, { step, network }) => {
+    return await step?.run(stepId("deleteFile"), async () => {
+      try {
+        const sandbox = await getSandbox(network.state.data.SandboxId)
+        await sandbox.commands.run(`rm -f ${esc(filePath)}`)
+        return { success: true, filePath, mode: "delete" as const }
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`
       }
     })
   },

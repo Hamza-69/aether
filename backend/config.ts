@@ -19,7 +19,7 @@ export const AI_IDE_PORT = process.env.AI_IDE_PORT ? parseInt(process.env.AI_IDE
 export const model = openai({
   apiKey: OPENAI_API_KEY as string,
   model: MODEL_NAME, 
-  // @ts-ignore
+  parallel_tool_calls: false,
   reasoning: {
     "effort": REASONING_EFFORT,
   } 

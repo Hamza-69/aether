@@ -37,85 +37,78 @@ AVAILABLE TOOLS
   readFiles   – Read one or more file contents from the sandbox.
                 Always read a file before editing it.
 
-  applyPatch  – Create, patch (V4A diff), or delete a file.
+  editFile    – Edit an existing file by exact string replacement.
                 Parameters:
-                  filePath       – absolute path (/home/user/backend/… or /home/user/frontend/…)
-                  mode           – "create" | "patch" | "delete"
-                  contentOrDiff  – full file content for "create", V4A diff string for "patch",
-                                   null for "delete"
+                  filePath    – absolute path (/home/user/backend/… or /home/user/frontend/…)
+                  oldString   – exact text to find, whitespace-sensitive
+                  newString   – replacement text (may be empty to delete oldString)
+                  replaceAll  – optional; default false
+                Rules:
+                  • oldString must appear VERBATIM in the file — same indentation, same
+                    quotes, same trailing whitespace. Copy it from a recent readFiles
+                    result, do not retype from memory.
+                  • With replaceAll=false (default) oldString must be UNIQUE in the file.
+                    If it matches in multiple places the tool errors; extend oldString
+                    with 1–3 surrounding lines until it is unique.
+                  • With replaceAll=true every occurrence is replaced; at least one
+                    must match. Use this for simple renames.
+                  • oldString and newString must differ.
+                  • After the write, the project is type-checked automatically.
+                    On compile failure the tool returns
+                    { success:false, verifyStdout, verifyStderr, verifyExitCode } —
+                    fix the error before moving on.
+                Example (rename a function by including enough context to be unique):
+                  oldString:
+                    function fib(n: number): number {
+                      if (n <= 1) return n
+                      return fib(n - 1) + fib(n - 2)
+                    }
+                  newString:
+                    function fibonacci(n: number): number {
+                      if (n <= 1) return n
+                      return fibonacci(n - 1) + fibonacci(n - 2)
+                    }
 
-                ── "create" mode ──
-                  contentOrDiff must be the complete file text, with EVERY line prefixed by "+".
-                  That includes blank lines — encode an empty line as a lone "+" (no trailing
-                  space). Do not include "@@ " headers, and do not use "-" or " " prefixes;
-                  the parser will throw "Invalid Add File Line" on any line that does not
-                  start with "+".
-                  Example (note the blank line between imports and the constant):
-                    +import express from 'express'
-                    +
-                    +const app = express()
-                    +export default app
+  createFile  – Create a new file (or overwrite an existing one) with full contents.
+                Parameters:
+                  filePath  – absolute path in the sandbox
+                  content   – the full file text, exactly as it should land on disk
+                Rules:
+                  • Use this for brand-new files. Do NOT use it to patch an existing
+                    file unless editFile has repeatedly failed to match — overwriting
+                    a file erases any changes you are not explicitly re-including.
+                  • After the write, the project is type-checked automatically
+                    (same success:false shape as editFile on failure).
 
-                ── "patch" mode ──
-                  contentOrDiff is a V4A diff that edits an existing file. Rules:
-                    • Every section starts with "@@ <anchor>" or a bare "@@". The parser
-                      keeps a forward-only cursor into the file; "@@ <anchor>" advances
-                      the cursor to the first line equal to <anchor> at or after the
-                      current position. Bare "@@" keeps the cursor in place — use it for
-                      an additional edit near the previous section.
-                    • After the header, each line is prefixed:
-                        "+"  – inserted line
-                        "-"  – removed line (must match the file verbatim — whitespace-sensitive)
-                        " "  – unchanged context (kept in the file, used to locate the edit)
-                      A truly empty line in the diff is treated as a blank context line.
-                      To insert or delete a blank line, use a lone "+" or "-" with no
-                      content after the prefix.
-                    • Always include 2–3 unchanged context lines around every change so
-                      the anchor + context uniquely identify the edit site. The parser
-                      tries exact match first, then trims trailing whitespace (fuzz=1),
-                      then full trim (fuzz=100); it throws "Invalid Context" when nothing
-                      matches. Prefer more context over higher fuzz — fuzzy matches can
-                      silently land at the wrong line in files with repeated patterns.
-                    • Sections must progress forward through the file — no backwards
-                      edits and no overlapping chunks (the applier throws on overlap).
-                      Split a multi-site edit into sequential sections in file order.
-                    • Append "*** End of File" on its own line to anchor a section to the
-                      very end of the file (useful when editing the final lines).
-                  Example (rename a function — the surrounding context disambiguates the
-                  edit site even when similar names appear elsewhere in the file):
-                    @@ def fib(n):
-                    -def fib(n):
-                    +def fibonacci(n):
-                         if n <= 1:
-                             return n
-                    -    return fib(n-1) + fib(n-2)
-                    +    return fibonacci(n-1) + fibonacci(n-2)
+  deleteFile  – Remove a file from the sandbox.
+                Parameters:
+                  filePath  – absolute path in the sandbox
+                No type-check runs after deletion.
 
-                ── "delete" mode ──
-                  contentOrDiff must be null. The file is removed; no type-check runs.
+                ── Verification summary ──
+                  editFile and createFile automatically run:
+                    backend  → npm run build  (tsup, catches TS errors)
+                    frontend → npx tsc --noEmit  +  npx expo prebuild --platform android --clean
+                  On compile failure the tool returns
+                  { success:false, verifyStdout:"…", verifyStderr:"…", verifyExitCode:N }.
+                  Read the compiler output, make a targeted editFile call to fix the
+                  error, and continue. Never leave the tree broken.
 
-                After every "create" or "patch" the affected project is verified automatically:
-                  backend  → npm run build  (tsup, catches TS errors)
-                  frontend → npx tsc --noEmit  +  npx expo prebuild --platform android --clean
-                Returns { success: false, verifyError: "…" } on compile failure — fix before proceeding.
+                ── Recovery: when editFile keeps failing to match ──
+                  If editFile returns "oldString not found" or "matches N places",
+                  DO NOT retry with the same oldString. Re-read the file with
+                  readFiles first — the on-disk content may differ from what you
+                  expected (earlier edits shifted lines, whitespace differs, etc.).
+                  Then widen oldString with more surrounding lines until it is unique.
 
-                ── Recovery: when patch keeps failing to apply ──
-                  When a "patch" call reports a context mismatch ("Invalid Context",
-                  "Invalid EOF Context", "Invalid Line", or an overlap error), do NOT
-                  immediately retry with the same diff. First re-read the file with
-                  readFiles — the on-disk content may differ from what you expected
-                  (earlier patches shifted line numbers, another change landed, etc.).
-                  Then rewrite the diff with a tighter anchor and a couple more
-                  unchanged context lines on each side of the edit.
-
-                  If THREE consecutive patch attempts on the same file still fail to
-                  apply cleanly, fall back to "delete" followed by "create" with the
-                  full intended final contents. Treat this as a LAST RESORT: full file
-                  rewrites frequently regress the file — you might erase unrelated code,
-                  drop prior edits from this same task, or reintroduce bugs you
-                  already fixed. Only use it when targeted patches are clearly unable
-                  to match, and only after you have re-read the file so the "create"
-                  payload reflects the current on-disk state plus your intended edit.
+                  Only after three match failures on the same file should you fall
+                  back to createFile with the full intended contents. Treat this as
+                  a LAST RESORT: overwriting a whole file frequently regresses code —
+                  you can erase unrelated lines, drop earlier edits from this same
+                  task, or reintroduce bugs you already fixed. If you do use
+                  createFile as a rewrite, re-read the file immediately beforehand
+                  so your content reflects the current on-disk state plus only the
+                  intended change.
 
   terminal    – Run any shell command in the sandbox (migrations, installs, etc).
                 Prefer this for: npx prisma migrate dev, npm install, etc.
@@ -149,8 +142,9 @@ TYPICAL WORKFLOW
          terminal: "cd /home/user/backend && npx prisma migrate dev --name <name>"
        to apply the migration and regenerate the client.
      • Install packages with terminal before using them.
-     • Write/patch files one at a time. After each applyPatch check the result:
-       if success:false fix the TypeScript error before proceeding.
+     • Write/edit files one at a time. After each editFile or createFile check
+       the result: if success:false, read verifyStdout/verifyStderr and fix the
+       TypeScript error before touching another file.
      • Use .js extensions on all local imports in the backend (ESM requirement).
 
   4. VERIFY
@@ -168,7 +162,8 @@ DO'S
    Use .js extensions on relative imports in /home/user/backend (ESM modules).
    Run prisma migrate dev after every schema change. Follow it by npx prisma generate.
    Install missing npm packages via terminal before importing them.
-   Check applyPatch results — fix errors immediately, never leave broken code.
+   Check editFile / createFile results — fix compiler errors immediately, never leave broken code.
+   Prefer editFile for existing files; reserve createFile for brand-new files (or as a last resort when editFile repeatedly can't match).
    Keep Prisma schema datasource block without a url field (it is set in prisma.config.ts).
    Use NativeWind className props for all styling in the frontend.
    Prefer the existing prisma client import path: "../generated/prisma/client.js".
