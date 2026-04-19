@@ -16,6 +16,16 @@ const cap = (output: string): string => {
 const stepId = (tool: string) =>
   `${tool}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+// e2b throws CommandExitError on non-zero exit; stdout/stderr/exitCode live on the error itself.
+const asCommandResult = (e: unknown): { stdout: string; stderr: string; exitCode: number } => {
+  const err = e as { stdout?: string; stderr?: string; exitCode?: number; message?: string };
+  return {
+    stdout: err?.stdout ?? "",
+    stderr: err?.stderr ?? err?.message ?? String(e),
+    exitCode: typeof err?.exitCode === "number" ? err.exitCode : 1,
+  };
+};
+
 export const grepTool = createTool({
   name: "grep",
   description: [
@@ -186,16 +196,17 @@ export const applyPatchTool = createTool({
             ? "cd /home/user/backend && npm run build 2>&1"
             : "cd /home/user/frontend && npx tsc --noEmit 2>&1 && npx expo prebuild --platform android --clean && rm -rf android"
           
-          let verify
           try {
-            verify = await sandbox.commands.run(verifyCmd)
+            await sandbox.commands.run(verifyCmd)
           } catch (e) {
+            const v = asCommandResult(e)
             return {
               success: false,
               filePath,
               mode,
-              //@ts-ignore
-              verifyError: cap(verify.stdout + verify.stderr),
+              verifyStdout: cap(v.stdout),
+              verifyStderr: cap(v.stderr),
+              verifyExitCode: v.exitCode,
             }
           }
         }
@@ -350,18 +361,17 @@ export const terminalTool = createTool({
   }),
   handler: async ({ command }, { step, network }) => {
     return await step?.run(stepId("terminal"), async () => {
-      let result
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
-        result = await sandbox.commands.run(command)
+        const result = await sandbox.commands.run(command)
         return {
           stdout: cap(result.stdout),
           stderr: cap(result.stderr),
           exitCode: result.exitCode,
         }
       } catch (e) {
-        // @ts-ignore
-        return { stdout: cap(result.stdout), stderr: cap(result.stderr), exitCode: result.exitCode }
+        const r = asCommandResult(e)
+        return { stdout: cap(r.stdout), stderr: cap(r.stderr), exitCode: r.exitCode }
       }
     })
   },

@@ -45,23 +45,44 @@ AVAILABLE TOOLS
                                    null for "delete"
 
                 ── "create" mode ──
-                  contentOrDiff must be the complete file text, with every line prefixed by "+".
-                  No "@@ " section headers are used.
-                  Example:
+                  contentOrDiff must be the complete file text, with EVERY line prefixed by "+".
+                  That includes blank lines — encode an empty line as a lone "+" (no trailing
+                  space). Do not include "@@ " headers, and do not use "-" or " " prefixes;
+                  the parser will throw "Invalid Add File Line" on any line that does not
+                  start with "+".
+                  Example (note the blank line between imports and the constant):
                     +import express from 'express'
+                    +
                     +const app = express()
                     +export default app
 
                 ── "patch" mode ──
-                  contentOrDiff is a V4A diff. Structure:
-                    • One or more sections, each starting with "@@ <anchor>" where <anchor> is
-                      a line from the file used to locate the edit site, or bare "@@" to anchor
-                      at the top of the file.
-                    • Lines are prefixed: "+" insert, "-" delete, " " (space) keep-as-context.
-                    • A section may end with "*** End of File" to anchor it at the end of the file.
-                    • The patch parser tries exact match first, then trims trailing whitespace,
-                      then full trim (fuzz). Throw if context cannot be matched.
-                  Example (rename a function):
+                  contentOrDiff is a V4A diff that edits an existing file. Rules:
+                    • Every section starts with "@@ <anchor>" or a bare "@@". The parser
+                      keeps a forward-only cursor into the file; "@@ <anchor>" advances
+                      the cursor to the first line equal to <anchor> at or after the
+                      current position. Bare "@@" keeps the cursor in place — use it for
+                      an additional edit near the previous section.
+                    • After the header, each line is prefixed:
+                        "+"  – inserted line
+                        "-"  – removed line (must match the file verbatim — whitespace-sensitive)
+                        " "  – unchanged context (kept in the file, used to locate the edit)
+                      A truly empty line in the diff is treated as a blank context line.
+                      To insert or delete a blank line, use a lone "+" or "-" with no
+                      content after the prefix.
+                    • Always include 2–3 unchanged context lines around every change so
+                      the anchor + context uniquely identify the edit site. The parser
+                      tries exact match first, then trims trailing whitespace (fuzz=1),
+                      then full trim (fuzz=100); it throws "Invalid Context" when nothing
+                      matches. Prefer more context over higher fuzz — fuzzy matches can
+                      silently land at the wrong line in files with repeated patterns.
+                    • Sections must progress forward through the file — no backwards
+                      edits and no overlapping chunks (the applier throws on overlap).
+                      Split a multi-site edit into sequential sections in file order.
+                    • Append "*** End of File" on its own line to anchor a section to the
+                      very end of the file (useful when editing the final lines).
+                  Example (rename a function — the surrounding context disambiguates the
+                  edit site even when similar names appear elsewhere in the file):
                     @@ def fib(n):
                     -def fib(n):
                     +def fibonacci(n):
@@ -77,6 +98,24 @@ AVAILABLE TOOLS
                   backend  → npm run build  (tsup, catches TS errors)
                   frontend → npx tsc --noEmit  +  npx expo prebuild --platform android --clean
                 Returns { success: false, verifyError: "…" } on compile failure — fix before proceeding.
+
+                ── Recovery: when patch keeps failing to apply ──
+                  When a "patch" call reports a context mismatch ("Invalid Context",
+                  "Invalid EOF Context", "Invalid Line", or an overlap error), do NOT
+                  immediately retry with the same diff. First re-read the file with
+                  readFiles — the on-disk content may differ from what you expected
+                  (earlier patches shifted line numbers, another change landed, etc.).
+                  Then rewrite the diff with a tighter anchor and a couple more
+                  unchanged context lines on each side of the edit.
+
+                  If THREE consecutive patch attempts on the same file still fail to
+                  apply cleanly, fall back to "delete" followed by "create" with the
+                  full intended final contents. Treat this as a LAST RESORT: full file
+                  rewrites frequently regress the file — you might erase unrelated code,
+                  drop prior edits from this same task, or reintroduce bugs you
+                  already fixed. Only use it when targeted patches are clearly unable
+                  to match, and only after you have re-read the file so the "create"
+                  payload reflects the current on-disk state plus your intended edit.
 
   terminal    – Run any shell command in the sandbox (migrations, installs, etc).
                 Prefer this for: npx prisma migrate dev, npm install, etc.
@@ -103,6 +142,7 @@ TYPICAL WORKFLOW
      • Identify every file that must change.
      • Decide the order: schema → migration → backend routes → frontend screens.
      • Check whether any new npm packages are needed.
+     • Research if needed: use ragQuery for React Native / Expo / NativeWind questions, webSearch + webFetch for others.
 
   3. IMPLEMENT
      • Schema changes: edit prisma/schema.prisma, then run
