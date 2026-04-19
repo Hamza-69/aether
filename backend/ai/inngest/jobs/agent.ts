@@ -14,7 +14,8 @@ import {
 } from "../../../lib/storage"
 
 export const codeAgentFunction = inngest.createFunction(
-  { id: "code-agent", triggers: [{ event: "code-agent/run" }] },
+  {id: "code-agent"},
+  { event: "code-agent/run" },
   async ({ event, step }) => {
 
     // Find the latest fragment with tar keys from a previous agent run on this project

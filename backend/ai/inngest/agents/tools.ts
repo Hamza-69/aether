@@ -10,10 +10,6 @@ const cap = (output: string): string => {
   const truncated = Buffer.from(output).subarray(0, MAX_BYTES).toString('utf8');
   return truncated + '\n\n... [Output truncated at 200 KB]';
 };
-// Inngest step IDs must be unique within a function run. Same tool called N times
-// would otherwise collide, so suffix every step with a fresh id.
-const stepId = (tool: string) =>
-  `${tool}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 // e2b throws CommandExitError on non-zero exit; stdout/stderr/exitCode live on the error itself.
 const asCommandResult = (e: unknown): { stdout: string; stderr: string; exitCode: number } => {
@@ -60,7 +56,7 @@ export const grepTool = createTool({
     caseSensitive: z.boolean().nullable().describe("Force case sensitivity on/off. Pass null for smart-case (sensitive only if pattern contains uppercase)."),
   }),
   handler: async ({ directory, pattern, include, limit, fixedStrings, caseSensitive }, { step, network }) => {
-    return await step?.run(stepId("grep"), async () => {
+    return await step?.run("grep", async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
 
@@ -117,7 +113,7 @@ export const globTool = createTool({
       .describe("Filename glob pattern (e.g. '*.ts', '**/*.ts')"),
   }),
   handler: async ({ directory, pattern }, { step, network }) => {
-    return await step?.run(stepId("glob"), async () => {
+    return await step?.run("glob", async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         
@@ -270,7 +266,7 @@ export const editFileTool = createTool({
       .describe("Replace every occurrence instead of requiring a unique match."),
   }),
   handler: async ({ filePath, oldString, newString, replaceAll }, { step, network }) => {
-    return await step?.run(stepId("editFile"), async () => {
+    return await step?.run("editFile", async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         const current = await sandbox.files.read(filePath)
@@ -338,7 +334,7 @@ export const createFileTool = createTool({
       .describe("Full file contents, exactly as they should appear on disk."),
   }),
   handler: async ({ filePath, content }, { step, network }) => {
-    return await step?.run(stepId("createFile"), async () => {
+    return await step?.run("createFile", async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         const guardrailNote = buildFrontendEndpointGuardrailNote(filePath, content)
@@ -378,7 +374,7 @@ export const deleteFileTool = createTool({
       .describe("Absolute path in the sandbox."),
   }),
   handler: async ({ filePath }, { step, network }) => {
-    return await step?.run(stepId("deleteFile"), async () => {
+    return await step?.run("deleteFile", async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         await sandbox.commands.run(`rm -f ${esc(filePath)}`)
@@ -398,7 +394,7 @@ export const webSearchTool = createTool({
     query: z.string().describe("Search query"),
   }),
   handler: async ({ query }, { step }) => {
-    return await step?.run(stepId("webSearch"), async () => {
+    return await step?.run("webSearch", async () => {
       const response = await fetch(
         `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
         {
@@ -443,7 +439,7 @@ export const webFetchTool = createTool({
     url: z.string().describe("URL to fetch"),
   }),
   handler: async ({ url }, { step }) => {
-    return await step?.run(stepId("webFetch"), async () => {
+    return await step?.run("webFetch", async () => {
       const response = await fetch(url, {
         headers: {
           "User-Agent":
@@ -488,7 +484,7 @@ export const ragQueryTool = createTool({
       .describe("Maximum number of results to return"),
   }),
   handler: async ({ query, source, matchCount }, { step }) => {
-    return await step?.run(stepId("ragQuery"), async () => {
+    return await step?.run("ragQuery", async () => {
       const embedding = await createEmbedding(query)
       const threshold = 0.5
       const results: Array<{
@@ -532,7 +528,7 @@ export const terminalTool = createTool({
     command: z.string(),
   }),
   handler: async ({ command }, { step, network }) => {
-    return await step?.run(stepId("terminal"), async () => {
+    return await step?.run("terminal", async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         const result = await sandbox.commands.run(command)
@@ -556,7 +552,7 @@ export const readFilesTool = createTool({
     files: z.array(z.string()),
   }),
   handler: async ({files}, {step, network}) => {
-    return await step?.run(stepId("readFiles"), async () =>{
+    return await step?.run("readFiles", async () =>{
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
         const contents = []

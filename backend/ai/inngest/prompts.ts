@@ -159,6 +159,7 @@ TYPICAL WORKFLOW
 DO'S
 ═══════════════════════════════════════════════════════════════════
 
+   Run tools one at a time, verifying after each step before moving on.
    Always read a file before editing it.
    Use ragQuery first for any Expo / NativeWind / React Native question.
    Use .js extensions on relative imports in /home/user/backend (ESM modules).
@@ -177,6 +178,10 @@ DO'S
 DON'TS
 ═══════════════════════════════════════════════════════════════════
 
+   Do not run multiple tools in parallel without verifying each step.
+   Do not edit a file without reading it first to understand the current content and structure.
+   Do not use webSearch for Expo or NativeWind questions without first trying ragQuery.
+   Do not rely on memory or assumptions about file content when using editFile — always copy the exact oldString from a recent readFiles result to ensure it matches the current on-disk content.
    Do not use require() or CommonJS syntax in /home/user/backend — it is pure ESM.
    Do not add a url field to the prisma schema datasource block.
    Do not skip the verification step after editing a file.

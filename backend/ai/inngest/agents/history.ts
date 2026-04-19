@@ -3,9 +3,10 @@ import {
   HistoryConfig,
 } from "@inngest/agent-kit"
 import {prisma} from "../../../lib/prisma"
+import { AgentState } from "./agent"
 
 // Define your history adapter with all four methods
-export const conversationHistoryAdapter: HistoryConfig<any> = {
+export const conversationHistoryAdapter: HistoryConfig<AgentState> = {
   // 1. Create new conversation threads (or ensure they exist)
   createThread: ({ state }) => {
     console.log(`[conversationHistoryAdapter/createThread] Creating/ensuring thread exists: ${state.threadId}`)
@@ -14,7 +15,7 @@ export const conversationHistoryAdapter: HistoryConfig<any> = {
   },
 
   // 2. Load conversation history (including user messages)
-  get: async ({ step, network, threadId }) => {
+  get: async ({ step, threadId }) => {
     console.log(`[conversationHistoryAdapter/get] Fetching conversation history for thread: ${threadId}`)
 
     if (!threadId || !step) {
@@ -26,30 +27,20 @@ export const conversationHistoryAdapter: HistoryConfig<any> = {
 
     await step.run("fetch-history-messages", async () => {
       console.log(`[conversationHistoryAdapter/get] Loading messages from database for project: ${threadId}`)
-      const stepId = await network.state.data.stepStartPublisher("fetch-history-messages", network.state.data.agentRunID)
-
-      const messages = await prisma.Message.findMany({
+      const messages = await prisma.message.findMany({
         where: { projectId: threadId },
         orderBy: { createdAt: "asc" },
       })
 
-      if (messages[messages.length - 1].role === "ASSISTANT") {
+      if (messages[messages.length - 1]?.role === "ASSISTANT") {
         messages.pop()
       }
       
-      console.log(`[conversationHistoryAdapter/get] Retrieved ${messages.length} messages from database`)
-
-      console.log(`[conversationHistoryAdapter/get] Fetching project details`)
-      const project = await prisma.Project.findUnique({ where: { id: threadId } })
-      console.log(`[conversationHistoryAdapter/get] Project type: ${project?.projectType}`)
-      
       // Transform ALL messages (user + agent) to AgentResult format
       // This preserves the complete conversation order
-      console.log(`[conversationHistoryAdapter/get] Transforming messages to AgentResult format`)
       results = messages.map((msg) => {
         
         if (!(msg.role === "ASSISTANT")) {
-          console.log(`[conversationHistoryAdapter/get] Transforming user message (ID: ${msg.id})`)
           // Convert user messages to AgentResult with agentName: "user"
           return new AgentResult(
             "user",
@@ -65,10 +56,9 @@ export const conversationHistoryAdapter: HistoryConfig<any> = {
             new Date(msg.createdAt)
           )
         } else {
-          console.log(`[conversationHistoryAdapter/get] Transforming assistant message (ID: ${msg.id}, type: ${msg.type})`)
           // Return agent results
           return new AgentResult(
-            project?.projectType === "NORMAL" ? "code-agent" : "provisioning-agent",
+            "code-agent",
             [
               {
                 type: "text" as const,
@@ -81,9 +71,6 @@ export const conversationHistoryAdapter: HistoryConfig<any> = {
           )
         }
       })
-      console.log(`[conversationHistoryAdapter/get] Transformed ${results.length} messages`)
-
-      await network.state.data.stepEndPublisher("fetch-history-messages", JSON.stringify(results), network.state.data.agentRunID, stepId as unknown as string)
       return results
     })
     console.log(`[conversationHistoryAdapter/get] Returning ${results.length} conversation results`)
