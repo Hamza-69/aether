@@ -23,6 +23,12 @@ enum PreviewStatus {
   RUNNING
 }
 
+enum DeploymentStatus {
+  IDLE
+  SCHEDULED
+  RUNNING
+}
+
 model ExpoDocs {
   id        String                 @id @default(cuid())
   content   String?
@@ -47,11 +53,14 @@ model Project {
   previewStatus    PreviewStatus @default(IDLE)
   previewStartedAt DateTime?     @db.Timestamptz(3)
 
-  messages   Message[]
-  apks       APK[]
-  keyStore   KeyStore?
-  deployment Deployment?
-  secrets    Secret[]
+  deploymentStatus    DeploymentStatus @default(IDLE)
+  deploymentStartedAt DateTime?        @db.Timestamptz(3)
+
+  messages    Message[]
+  apks        APK[]
+  keyStore    KeyStore?
+  deployments Deployment[]
+  secrets     Secret[]
 }
 
 model Secret {
@@ -123,7 +132,8 @@ model Deployment {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  // Required Back-relation (1-to-1 requires @unique)
-  projectId String   @unique
+  projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
 }

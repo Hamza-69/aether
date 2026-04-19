@@ -10,6 +10,8 @@ import {
   SecretSummarySchema,
   SendMessageBodySchema,
   UpsertSecretsBodySchema,
+  DeploymentSchema,
+  DeployResponseSchema,
 } from "./models"
 
 const registry = new OpenAPIRegistry()
@@ -21,6 +23,8 @@ registry.register("Error", ErrorSchema)
 registry.register("SecretEntry", SecretEntrySchema)
 registry.register("SecretSummary", SecretSummarySchema)
 registry.register("UpsertSecretsBody", UpsertSecretsBodySchema)
+registry.register("Deployment", DeploymentSchema)
+registry.register("DeployResponse", DeployResponseSchema)
 
 registry.registerPath({
   method: "get",
@@ -231,6 +235,66 @@ registry.registerPath({
     204: { description: "Deleted" },
     404: {
       description: "Project or secret not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "post",
+  path: "/api/projects/{projectId}/deploy",
+  tags: ["Deployments"],
+  summary: "Deploy the project's latest backend fragment to Fly.io",
+  description:
+    "Validates that the project has a FLY_API_TOKEN secret and a runnable fragment, then enqueues the deploy-project/run Inngest job. The job restores the latest backend tar in a sandbox, runs deploy.sh (which does `fly launch` on first deploy and `fly deploy` on redeploys), pushes the project's .env.example keys as Fly secrets, records a new Deployment row, and emits a new assistant message + fragment linking to the deployment URL. Returns 202 immediately; the deployment completes asynchronously.",
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+  },
+  responses: {
+    202: {
+      description: "Deployment scheduled",
+      content: { "application/json": { schema: DeployResponseSchema } },
+    },
+    400: {
+      description: "FLY_API_TOKEN secret is not set for this project",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Project or runnable fragment not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "get",
+  path: "/api/projects/{projectId}/deployments",
+  tags: ["Deployments"],
+  summary: "List all deployments for a project (read-only)",
+  description:
+    "Returns every deployment recorded for the project, newest first. Each deployment keeps its own URL so previous URLs remain resolvable if a later deployment changes the app hostname. Deployments are created only by the deploy-project background job; there is no PATCH/DELETE endpoint.",
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+  },
+  responses: {
+    200: {
+      description: "Deployments list (most recent first)",
+      content: {
+        "application/json": {
+          schema: z.object({ deployments: z.array(DeploymentSchema) }),
+        },
+      },
+    },
+    404: {
+      description: "Project not found",
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {

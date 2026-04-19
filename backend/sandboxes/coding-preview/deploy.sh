@@ -67,7 +67,7 @@ LITESTREAM
   # ── Patch Dockerfile: fix prisma copy path ──────────────────────────────
   if grep -q 'COPY prisma \.' Dockerfile 2>/dev/null; then
     warn "Fixing COPY prisma path in Dockerfile..."
-    sed -i '' 's|COPY prisma \.|COPY prisma ./prisma|g' Dockerfile
+    sed -i 's|COPY prisma \.|COPY prisma ./prisma|g' Dockerfile
     success "Fixed."
   fi
 

@@ -21,9 +21,15 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# flyctl
-RUN curl -L https://fly.io/install.sh | sh
-ENV PATH="/root/.fly/bin:$PATH"
+# flyctl — install to a world-readable location so non-root sandbox users can exec it
+RUN curl -L https://fly.io/install.sh | sh \
+    && mv /root/.fly /usr/local/fly \
+    && rm -f /usr/local/fly/bin/fly \
+    && ln -s /usr/local/fly/bin/flyctl /usr/local/fly/bin/fly \
+    && ln -s /usr/local/fly/bin/flyctl /usr/local/bin/fly \
+    && ln -s /usr/local/fly/bin/flyctl /usr/local/bin/flyctl
+ENV FLY_INSTALL=/usr/local/fly
+ENV PATH="/usr/local/fly/bin:$PATH"
 
 WORKDIR /app
 

@@ -4,6 +4,50 @@ import { getSandbox } from "../../../lib/utils"
 import { matchExpoDocs, matchNativeWindDocs } from "../../rag/db/functions"
 import { createEmbedding } from "../../rag/utils"
 const esc = (str: string) => `'${str.replace(/'/g, "'\\''")}'`;
+
+// Fly.io deployment artifacts are owned by the deploy pipeline (deploy.sh / flyctl).
+// The agent must NEVER create, edit, delete, or shell-touch these — doing so corrupts
+// deploys. Enforced in editFile, createFile, deleteFile, and terminal.
+const FLY_PROTECTED_BASENAMES = new Set([
+  "fly.toml",
+  "Dockerfile",
+  ".dockerignore",
+  "litestream.yml",
+  "fly.json",
+]);
+const FLY_PROTECTED_DIR_SEGMENTS = [".fly"];
+
+const isFlyProtectedPath = (path: string): boolean => {
+  const normalized = path.replace(/\\/g, "/").trim();
+  const base = normalized.split("/").filter(Boolean).pop() ?? "";
+  if (FLY_PROTECTED_BASENAMES.has(base)) return true;
+  for (const seg of FLY_PROTECTED_DIR_SEGMENTS) {
+    if (normalized.split("/").includes(seg)) return true;
+  }
+  return false;
+};
+
+const FLY_PROTECTED_COMMAND_TOKENS = [
+  "fly.toml",
+  "Dockerfile",
+  ".dockerignore",
+  "litestream.yml",
+  ".fly/",
+  "flyctl",
+  " fly ",
+];
+
+const detectFlyProtectedInCommand = (command: string): string | null => {
+  const padded = ` ${command} `;
+  for (const token of FLY_PROTECTED_COMMAND_TOKENS) {
+    if (padded.includes(token)) return token;
+  }
+  if (/^\s*fly(\s|$)/.test(command)) return "fly";
+  return null;
+};
+
+const FLY_BLOCKED_MESSAGE =
+  "Blocked: Fly.io deployment artifacts (fly.toml, Dockerfile, .dockerignore, litestream.yml, .fly/, flyctl) are managed by the deploy pipeline and must not be modified by the agent. If the user asks to change Fly configuration, refuse and explain that Fly config is out of scope.";
 const MAX_BYTES = 200 * 1024; // 200 KB
 const cap = (output: string): string => {
   if (Buffer.byteLength(output, 'utf8') <= MAX_BYTES) return output;
@@ -289,6 +333,9 @@ export const editFileTool = createTool({
   handler: async ({ filePath, oldString, newString, replaceAll }, { step, network }) => {
     return await step?.run("editFile", async () => {
       try {
+        if (isFlyProtectedPath(filePath)) {
+          return `Error: ${FLY_BLOCKED_MESSAGE}`
+        }
         const sandbox = await getSandbox(network.state.data.SandboxId)
         const current = await sandbox.files.read(filePath)
 
@@ -361,6 +408,9 @@ export const createFileTool = createTool({
   handler: async ({ filePath, content }, { step, network }) => {
     return await step?.run("createFile", async () => {
       try {
+        if (isFlyProtectedPath(filePath)) {
+          return `Error: ${FLY_BLOCKED_MESSAGE}`
+        }
         const sandbox = await getSandbox(network.state.data.SandboxId)
         const guardrailNote = buildFrontendEndpointGuardrailNote(filePath, content)
         await sandbox.files.write(filePath, content)
@@ -405,6 +455,9 @@ export const deleteFileTool = createTool({
   handler: async ({ filePath }, { step, network }) => {
     return await step?.run("deleteFile", async () => {
       try {
+        if (isFlyProtectedPath(filePath)) {
+          return `Error: ${FLY_BLOCKED_MESSAGE}`
+        }
         const sandbox = await getSandbox(network.state.data.SandboxId)
         await sandbox.commands.run(`rm -f ${esc(filePath)}`)
         return { success: true, filePath, mode: "delete" as const }
@@ -559,6 +612,14 @@ export const terminalTool = createTool({
   handler: async ({ command }, { step, network }) => {
     return await step?.run("terminal", async () => {
       try {
+        const blockedToken = detectFlyProtectedInCommand(command)
+        if (blockedToken) {
+          return {
+            stdout: "",
+            stderr: `${FLY_BLOCKED_MESSAGE} (matched token: ${blockedToken})`,
+            exitCode: 126,
+          }
+        }
         const sandbox = await getSandbox(network.state.data.SandboxId)
         const result = await sandbox.commands.run(command)
         return {

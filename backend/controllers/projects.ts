@@ -4,10 +4,13 @@ import { prisma } from "../lib/prisma"
 import { inngest } from "../ai/inngest/client"
 import { CreateProjectBodySchema } from "../models"
 import { secretsRouter } from "./secrets"
+import { deploymentsRouter, deployProjectHandler } from "./deployments"
 
 export const projectsRouter = Router()
 
 projectsRouter.use("/:projectId/secrets", secretsRouter)
+projectsRouter.use("/:projectId/deployments", deploymentsRouter)
+projectsRouter.post("/:projectId/deploy", deployProjectHandler)
 
 const toKebabCase = (str: string) =>
   str
