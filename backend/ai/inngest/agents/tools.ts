@@ -54,13 +54,12 @@ export const grepTool = createTool({
   parameters: z.object({
     directory: z.string().describe("Absolute path to search"),
     pattern: z.string().describe("Extended-regex pattern, or a literal string if fixedStrings=true"),
-    mode: z.enum(["content", "files_with_matches", "count"]).default("content"),
     include: z.string().nullable().describe("Glob pattern to filter files (e.g., '*.ts', '*.tsx'). Pass null to search all files."),
     limit: z.number().int().default(100).describe("Max lines to return. Keep this low to avoid context explosion."),
     fixedStrings: z.boolean().default(false).describe("Treat pattern as a literal string instead of a regex. Use this when searching for code that contains [, ], (, ), |, etc."),
     caseSensitive: z.boolean().nullable().describe("Force case sensitivity on/off. Pass null for smart-case (sensitive only if pattern contains uppercase)."),
   }),
-  handler: async ({ directory, pattern, mode, include, limit, fixedStrings, caseSensitive }, { step, network }) => {
+  handler: async ({ directory, pattern, include, limit, fixedStrings, caseSensitive }, { step, network }) => {
     return await step?.run(stepId("grep"), async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
@@ -79,11 +78,8 @@ export const grepTool = createTool({
         // Excludes — one flag per entry so it works under sh/dash (no brace expansion).
         for (const dir of GREP_EXCLUDE_DIRS) cmd += ` --exclude-dir=${esc(dir)}`;
         for (const file of GREP_EXCLUDE_FILES) cmd += ` --exclude=${esc(file)}`;
-
-        // Output mode
-        if (mode === "files_with_matches") cmd += ` -l`;
-        else if (mode === "count") cmd += ` -c`;
-        else cmd += ` -n`; // content mode
+        
+        cmd += ` -n`; // content mode
 
         // Optional glob filtering
         if (include) cmd += ` --include=${esc(include)}`;
