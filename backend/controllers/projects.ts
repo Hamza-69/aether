@@ -3,7 +3,6 @@ import { Sandbox } from "e2b"
 import { prisma } from "../lib/prisma"
 import { inngest } from "../ai/inngest/client"
 import { CreateProjectBodySchema } from "../models"
-import { getStateDownloadUrl } from "../lib/storage"
 
 export const projectsRouter = Router()
 
@@ -16,9 +15,43 @@ const toKebabCase = (str: string) =>
     .replace(/-+/g, "-")
     .slice(0, 60)
 
-const stringifyEnv = (env: Record<string, string>) => {
-  const lines = Object.entries(env).map(([key, value]) => `${key}=${JSON.stringify(value)}`)
-  return `${lines.join("\n")}\n`
+const RUNNING_MAX_MIN = 20
+const SCHEDULED_STUCK_MIN = 5
+const SANDBOX_NOT_FOUND_MSG = "The sandbox was not found"
+
+const isSandboxUrlAlive = async (url: string) => {
+  try {
+    const response = await fetch(url, { method: "GET", redirect: "follow" })
+    if (response.status === 502) {
+      const body = await response.text().catch(() => "")
+      if (body.includes(SANDBOX_NOT_FOUND_MSG)) return false
+    }
+    return response.status < 500
+  } catch {
+    return false
+  }
+}
+
+const startPreviewJob = async (projectId: string) => {
+  const sandbox = await Sandbox.create("coding-preview")
+  await sandbox.setTimeout(60_000 * 10 * 3)
+  const url = `https://8081-${sandbox.sandboxId}.e2b.app`
+
+  await prisma.project.update({
+    where: { id: projectId },
+    data: {
+      previewUrl: url,
+      previewStatus: "SCHEDULED",
+      previewStartedAt: new Date(),
+    },
+  })
+
+  await inngest.send({
+    name: "preview-project/run",
+    data: { projectId, sandboxId: sandbox.sandboxId },
+  })
+
+  return url
 }
 
 projectsRouter.get("/", async (_req, res) => {
@@ -89,7 +122,7 @@ projectsRouter.post("/:projectId/preview", async (req, res) => {
     return
   }
 
-  const latestMessage = await prisma.message.findFirst({
+  const hasRunnableFragment = await prisma.message.findFirst({
     where: {
       projectId,
       role: "ASSISTANT",
@@ -98,66 +131,38 @@ projectsRouter.post("/:projectId/preview", async (req, res) => {
         backendTarKey: { not: null },
       },
     },
-    orderBy: { createdAt: "desc" },
-    include: { fragment: true },
+    select: { id: true },
   })
 
-  if (!latestMessage?.fragment?.frontendTarKey || !latestMessage.fragment.backendTarKey) {
+  if (!hasRunnableFragment) {
     res.status(404).json({ error: "No runnable fragment found for project" })
     return
   }
 
   try {
-    const sandbox = await Sandbox.create("coding-preview")
-    await sandbox.setTimeout(60_000 * 10 * 3)
+    const now = Date.now()
+    const startedAt = project.previewStartedAt?.getTime() ?? 0
+    const elapsedMin = (now - startedAt) / 60_000
 
-    const frontendStateUrl = await getStateDownloadUrl(latestMessage.fragment.frontendTarKey)
-    const backendStateUrl = await getStateDownloadUrl(latestMessage.fragment.backendTarKey)
-
-    const frontendRestore = await sandbox.commands.run(
-      `mkdir -p /home/user/frontend && curl -sL -o /tmp/frontend.tar.gz "${frontendStateUrl}" && tar -xzf /tmp/frontend.tar.gz -C /home/user/frontend && rm /tmp/frontend.tar.gz && cd /home/user/frontend && npm i`,
-      { timeoutMs: 300_000 },
-    )
-    if (frontendRestore.exitCode !== 0) {
-      throw new Error(`Frontend restore failed (exit ${frontendRestore.exitCode}):\n${frontendRestore.stderr}`)
+    if (project.previewStatus === "RUNNING" && project.previewUrl && elapsedMin <= RUNNING_MAX_MIN) {
+      const alive = await isSandboxUrlAlive(project.previewUrl)
+      if (alive) {
+        res.status(200).json({ url: project.previewUrl, alreadyRunning: true })
+        return
+      }
     }
 
-    const backendRestore = await sandbox.commands.run(
-      `mkdir -p /home/user/backend && curl -sL -o /tmp/backend.tar.gz "${backendStateUrl}" && tar -xzf /tmp/backend.tar.gz -C /home/user/backend && rm /tmp/backend.tar.gz && cd /home/user/backend && npm i && npx prisma generate && npx prisma db push`,
-      { timeoutMs: 300_000 },
-    )
-    if (backendRestore.exitCode !== 0) {
-      throw new Error(`Backend restore failed (exit ${backendRestore.exitCode}):\n${backendRestore.stderr}`)
+    if (
+      project.previewStatus === "SCHEDULED" &&
+      project.previewUrl &&
+      elapsedMin <= SCHEDULED_STUCK_MIN
+    ) {
+      res.status(200).json({ url: project.previewUrl, scheduled: true })
+      return
     }
 
-    const frontendUrl = `https://${sandbox.getHost(8081)}`
-    const backendUrl = `https://${sandbox.getHost(3000)}`
-
-    await sandbox.files.write(
-      "/home/user/backend/.env",
-      stringifyEnv({
-        PREVIEW_CORS_ORIGIN: frontendUrl,
-      }),
-    )
-    await sandbox.files.write(
-      "/home/user/frontend/.env",
-      stringifyEnv({
-        EXPO_PUBLIC_API_URL: backendUrl,
-      }),
-    )
-
-    await sandbox.commands.run("cd /home/user/backend && npm run dev", {
-      background: true,
-      requestTimeoutMs: 60_000 * 10 * 3,
-      timeoutMs: 60_000 * 10 * 3,
-    })
-    await sandbox.commands.run("cd /home/user/frontend && npm run dev", {
-      background: true,
-      requestTimeoutMs: 60_000 * 10 * 3,
-      timeoutMs: 60_000 * 10 * 3,
-    })
-
-    res.status(200).json({ url: frontendUrl })
+    const url = await startPreviewJob(projectId)
+    res.status(202).json({ url, scheduled: true })
   } catch (error) {
     console.error("[projectsRouter.POST /:projectId/preview] Failed:", error)
     res.status(500).json({ error: "Failed to run preview" })

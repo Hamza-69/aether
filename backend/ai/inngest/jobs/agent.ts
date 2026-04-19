@@ -181,6 +181,17 @@ export const codeAgentFunction = inngest.createFunction(
       return frontendUrl
     })
 
+    await step.run("mark-preview-running", async () => {
+      await prisma.project.update({
+        where: { id: event.data.projectId },
+        data: {
+          previewUrl: sandboxUrl,
+          previewStatus: "RUNNING",
+          previewStartedAt: new Date(),
+        },
+      })
+    })
+
     await step.run("save-result", async () => {
       return await prisma.message.create({
         data: {

@@ -17,6 +17,12 @@ enum MessageType {
   ERROR
 }
 
+enum PreviewStatus {
+  IDLE
+  SCHEDULED
+  RUNNING
+}
+
 model ExpoDocs {
   id        String                 @id @default(cuid())
   content   String?
@@ -36,7 +42,11 @@ model Project {
   name       String
   createdAt  DateTime    @default(now()) @db.Timestamptz(3)
   updatedAt  DateTime    @updatedAt @db.Timestamptz(3)
-  
+
+  previewUrl       String?
+  previewStatus    PreviewStatus @default(IDLE)
+  previewStartedAt DateTime?     @db.Timestamptz(3)
+
   messages   Message[]
   apks       APK[]
   keyStore   KeyStore?

@@ -21,6 +21,14 @@ export const CreateProjectBodySchema = z
 
 export const ProjectPreviewSchema = z
   .object({
-    url: z.string().url().openapi({ example: "https://8081.sandbox-id.e2b.dev" }),
+    url: z.string().url().openapi({ example: "https://8081-123.e2b.app" }),
+    alreadyRunning: z
+      .boolean()
+      .optional()
+      .openapi({ description: "Sandbox is already up and serving at url" }),
+    scheduled: z
+      .boolean()
+      .optional()
+      .openapi({ description: "A background job is bringing the sandbox up at url" }),
   })
   .openapi("ProjectPreview")

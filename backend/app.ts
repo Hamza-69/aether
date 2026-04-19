@@ -6,6 +6,7 @@ import morgan from "morgan"
 import { projectsRouter } from "./controllers/projects"
 import { messagesRouter } from "./controllers/messages"
 import { codeAgentFunction } from "./ai/inngest/jobs/agent"
+import { previewProjectFunction } from "./ai/inngest/jobs/preview"
 import { apiReference } from "@scalar/express-api-reference"
 import { openApiSpec } from "./openapi-registry"
 
@@ -32,7 +33,7 @@ app.use(
   }),
 )
 
-app.use("/api/inngest", serve({ client: inngest, functions: [codeAgentFunction] }))
+app.use("/api/inngest", serve({ client: inngest, functions: [codeAgentFunction, previewProjectFunction] }))
 app.use("/api/projects", projectsRouter)
 app.use("/api/messages", messagesRouter)
 
