@@ -173,6 +173,11 @@ DO'S
    Configure frontend API base URL through EXPO_PUBLIC_API_URL in .env (Expo public env method).
    Keep EXPO_PUBLIC_API_URL origin-only (scheme + domain/subdomain + optional port), and append API routes in code.
    Keep backend CORS origins env-driven (CORS_ALLOWED_ORIGINS and PREVIEW_CORS_ORIGIN), not hardcoded.
+   Always maintain /home/user/backend/.env.example listing EVERY env var the backend reads (keys only,
+   empty/placeholder values). This is NON-NEGOTIABLE: the preview runner resolves the project's secret
+   vault by reading this file, so any missing key means the secret will not be injected at runtime.
+   Whenever you add or change a backend env var usage, update .env.example in the same task.
+   Never create a frontend .env.example — the frontend only consumes EXPO_PUBLIC_API_URL, set by the runner.
 
 ═══════════════════════════════════════════════════════════════════
 DON'TS

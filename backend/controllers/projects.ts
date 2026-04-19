@@ -3,8 +3,11 @@ import { Sandbox } from "e2b"
 import { prisma } from "../lib/prisma"
 import { inngest } from "../ai/inngest/client"
 import { CreateProjectBodySchema } from "../models"
+import { secretsRouter } from "./secrets"
 
 export const projectsRouter = Router()
+
+projectsRouter.use("/:projectId/secrets", secretsRouter)
 
 const toKebabCase = (str: string) =>
   str

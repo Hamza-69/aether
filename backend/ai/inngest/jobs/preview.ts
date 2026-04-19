@@ -2,11 +2,7 @@ import { inngest } from "../client"
 import { prisma } from "../../../lib/prisma"
 import { getSandbox } from "../../../lib/utils"
 import { getStateDownloadUrl } from "../../../lib/storage"
-
-const stringifyEnv = (env: Record<string, string>) => {
-  const lines = Object.entries(env).map(([key, value]) => `${key}=${JSON.stringify(value)}`)
-  return `${lines.join("\n")}\n`
-}
+import { resolveBackendSecretsFromExample, stringifyEnv } from "../../../lib/projectSecrets"
 
 export const previewProjectFunction = inngest.createFunction(
   { id: "preview-project" },
@@ -74,9 +70,10 @@ export const previewProjectFunction = inngest.createFunction(
       const frontendUrl = `https://${sandbox.getHost(8081)}`
       const backendUrl = `https://${sandbox.getHost(3000)}`
 
+      const projectSecrets = await resolveBackendSecretsFromExample(sandbox, projectId)
       await sandbox.files.write(
         "/home/user/backend/.env",
-        stringifyEnv({ PREVIEW_CORS_ORIGIN: frontendUrl }),
+        stringifyEnv({ ...projectSecrets, PREVIEW_CORS_ORIGIN: frontendUrl }),
       )
       await sandbox.files.write(
         "/home/user/frontend/.env",

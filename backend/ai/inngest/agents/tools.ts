@@ -238,6 +238,27 @@ function buildFrontendEndpointGuardrailNote(filePath: string, content: string): 
   return `Frontend endpoint guardrail note: detected ${details.join("; ")}. Keep frontend API config on EXPO_PUBLIC_API_URL in .env (example: EXPO_PUBLIC_API_URL=https://api.example.com) and keep the env value origin-only (no routes).`
 }
 
+async function buildBackendEnvExampleGuardrailNote(
+  sandbox: Awaited<ReturnType<typeof getSandbox>>,
+  filePath: string,
+): Promise<string | undefined> {
+  if (!filePath.startsWith("/home/user/backend")) return undefined
+  if (filePath === "/home/user/backend/.env.example") return undefined
+  try {
+    const result = await sandbox.commands.run(`test -f /home/user/backend/.env.example`)
+    if (result.exitCode === 0) return undefined
+  } catch {
+    // test -f returns non-zero on missing; treat as missing and fall through
+  }
+  return [
+    "Backend .env.example guardrail: /home/user/backend/.env.example is MISSING.",
+    "This is non-negotiable — every backend change must be accompanied by a committed .env.example",
+    "listing every environment variable the backend reads (keys only, placeholder/empty values).",
+    "Create /home/user/backend/.env.example now (before more backend edits) so preview runs can",
+    "resolve the project's secret vault by key name.",
+  ].join(" ")
+}
+
 export const editFileTool = createTool({
   name: "editFile",
   description: [
@@ -293,6 +314,10 @@ export const editFileTool = createTool({
         const guardrailNote = buildFrontendEndpointGuardrailNote(filePath, updated)
         await sandbox.files.write(filePath, updated)
 
+        const backendEnvNote = await buildBackendEnvExampleGuardrailNote(sandbox, filePath)
+        const notes = [guardrailNote, backendEnvNote].filter(Boolean) as string[]
+        const noteField = notes.length > 0 ? { note: notes.join("\n\n") } : {}
+
         const verify = await verifyAfterWrite(sandbox, filePath)
         if (!verify.ok) {
           return {
@@ -302,14 +327,14 @@ export const editFileTool = createTool({
             verifyStdout: verify.verifyStdout,
             verifyStderr: verify.verifyStderr,
             verifyExitCode: verify.verifyExitCode,
-            ...(guardrailNote ? { note: guardrailNote } : {}),
+            ...noteField,
           }
         }
         return {
           success: true,
           filePath,
           mode: "edit" as const,
-          ...(guardrailNote ? { note: guardrailNote } : {}),
+          ...noteField,
         }
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`
@@ -340,6 +365,10 @@ export const createFileTool = createTool({
         const guardrailNote = buildFrontendEndpointGuardrailNote(filePath, content)
         await sandbox.files.write(filePath, content)
 
+        const backendEnvNote = await buildBackendEnvExampleGuardrailNote(sandbox, filePath)
+        const notes = [guardrailNote, backendEnvNote].filter(Boolean) as string[]
+        const noteField = notes.length > 0 ? { note: notes.join("\n\n") } : {}
+
         const verify = await verifyAfterWrite(sandbox, filePath)
         if (!verify.ok) {
           return {
@@ -349,14 +378,14 @@ export const createFileTool = createTool({
             verifyStdout: verify.verifyStdout,
             verifyStderr: verify.verifyStderr,
             verifyExitCode: verify.verifyExitCode,
-            ...(guardrailNote ? { note: guardrailNote } : {}),
+            ...noteField,
           }
         }
         return {
           success: true,
           filePath,
           mode: "create" as const,
-          ...(guardrailNote ? { note: guardrailNote } : {}),
+          ...noteField,
         }
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`

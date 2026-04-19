@@ -12,6 +12,7 @@ import {
   ZERO_STATE_FRONTEND_KEY,
   ZERO_STATE_BACKEND_KEY,
 } from "../../../lib/storage"
+import { resolveBackendSecretsFromExample, stringifyEnv } from "../../../lib/projectSecrets"
 
 export const codeAgentFunction = inngest.createFunction(
   {id: "code-agent"},
@@ -119,7 +120,7 @@ export const codeAgentFunction = inngest.createFunction(
       const sandbox = await getSandbox(SandboxId)
 
       const tarFrontend = await sandbox.commands.run(
-        `cd /home/user/frontend && git init -q && git ls-files --cached --others --exclude-standard | tar -czf /tmp/frontend.tar.gz -T -`,
+        `cd /home/user/frontend && git init -q && git ls-files --cached --others --exclude-standard | grep -Ev '^\\.env$' | tar -czf /tmp/frontend.tar.gz -T -`,
         { timeoutMs: 120_000 }
       )
       if (tarFrontend.exitCode !== 0) {
@@ -127,7 +128,7 @@ export const codeAgentFunction = inngest.createFunction(
       }
 
       const tarBackend = await sandbox.commands.run(
-        `cd /home/user/backend && git init -q && git ls-files --cached --others --exclude-standard | tar -czf /tmp/backend.tar.gz -T -`,
+        `cd /home/user/backend && git init -q && git ls-files --cached --others --exclude-standard | grep -Ev '^\\.env$' | tar -czf /tmp/backend.tar.gz -T -`,
         { timeoutMs: 120_000 }
       )
       if (tarBackend.exitCode !== 0) {
@@ -162,16 +163,19 @@ export const codeAgentFunction = inngest.createFunction(
       const frontendUrl = `https://${sandbox.getHost(8081)}`
       const backendUrl = `https://${sandbox.getHost(3000)}`
 
-      await sandbox.commands.run(
-        `cd /home/user/backend && touch .env && (grep -v '^PREVIEW_CORS_ORIGIN=' .env || true) > .env.tmp && printf 'PREVIEW_CORS_ORIGIN=%s\\n' '${frontendUrl}' >> .env.tmp && mv .env.tmp .env`
+      const projectSecrets = await resolveBackendSecretsFromExample(sandbox, event.data.projectId)
+      await sandbox.files.write(
+        "/home/user/backend/.env",
+        stringifyEnv({ ...projectSecrets, PREVIEW_CORS_ORIGIN: frontendUrl }),
       )
       await sandbox.commands.run("cd /home/user/backend && npm run dev", {
         background: true,
         requestTimeoutMs: 60_000*10*3,
         timeoutMs: 60_000*10*3
       })
-      await sandbox.commands.run(
-        `cd /home/user/frontend && touch .env && (grep -v '^EXPO_PUBLIC_API_URL=' .env || true) > .env.tmp && printf 'EXPO_PUBLIC_API_URL=%s\\n' '${backendUrl}' >> .env.tmp && mv .env.tmp .env`
+      await sandbox.files.write(
+        "/home/user/frontend/.env",
+        stringifyEnv({ EXPO_PUBLIC_API_URL: backendUrl }),
       )
       await sandbox.commands.run("cd /home/user/frontend && npm run dev", {
         background: true,

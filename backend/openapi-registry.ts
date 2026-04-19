@@ -6,7 +6,10 @@ import {
   MessageSchema,
   ProjectPreviewSchema,
   ProjectSchema,
+  SecretEntrySchema,
+  SecretSummarySchema,
   SendMessageBodySchema,
+  UpsertSecretsBodySchema,
 } from "./models"
 
 const registry = new OpenAPIRegistry()
@@ -15,6 +18,9 @@ registry.register("Project", ProjectSchema)
 registry.register("ProjectPreview", ProjectPreviewSchema)
 registry.register("Message", MessageSchema)
 registry.register("Error", ErrorSchema)
+registry.register("SecretEntry", SecretEntrySchema)
+registry.register("SecretSummary", SecretSummarySchema)
+registry.register("UpsertSecretsBody", UpsertSecretsBodySchema)
 
 registry.registerPath({
   method: "get",
@@ -133,6 +139,98 @@ registry.registerPath({
     },
     404: {
       description: "Project not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "get",
+  path: "/api/projects/{projectId}/secrets",
+  tags: ["Secrets"],
+  summary: "List secret names for a project",
+  description:
+    "Returns only names and updatedAt timestamps. Values are never returned by the API.",
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+  },
+  responses: {
+    200: {
+      description: "Secret summaries",
+      content: {
+        "application/json": {
+          schema: z.object({ secrets: z.array(SecretSummarySchema) }),
+        },
+      },
+    },
+    404: {
+      description: "Project not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "post",
+  path: "/api/projects/{projectId}/secrets",
+  tags: ["Secrets"],
+  summary: "Write or overwrite one or more project secrets",
+  description:
+    "Each encryptedValue is base64 of [IV(12) | AuthTag(16) | ciphertext] AES-256-GCM-encrypted with CLIENT_SECRET_KEY. The server decrypts with CLIENT_SECRET_KEY and re-encrypts at rest with ENCRYPTION_MASTER_KEY. Upserts by (projectId, name).",
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+    body: {
+      required: true,
+      content: { "application/json": { schema: UpsertSecretsBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Secrets written/overwritten",
+      content: {
+        "application/json": {
+          schema: z.object({ written: z.array(z.string()) }),
+        },
+      },
+    },
+    400: {
+      description: "Invalid body or decryption failure",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Project not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/projects/{projectId}/secrets/{name}",
+  tags: ["Secrets"],
+  summary: "Delete a secret by name",
+  request: {
+    params: z.object({
+      projectId: z.string().openapi({ example: "clxyz123" }),
+      name: z.string().openapi({ example: "OPENAI_API_KEY" }),
+    }),
+  },
+  responses: {
+    204: { description: "Deleted" },
+    404: {
+      description: "Project or secret not found",
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {

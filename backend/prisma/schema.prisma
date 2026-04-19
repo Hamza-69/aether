@@ -51,6 +51,20 @@ model Project {
   apks       APK[]
   keyStore   KeyStore?
   deployment Deployment?
+  secrets    Secret[]
+}
+
+model Secret {
+  id             String   @id @default(cuid())
+  name           String
+  encryptedValue Bytes
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
 }
 
 model APK {
