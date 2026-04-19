@@ -158,18 +158,26 @@ export const codeAgentFunction = inngest.createFunction(
 
     const sandboxUrl = await step.run("run-project-and-get-sandbox-url", async () => {
       const sandbox = await getSandbox(SandboxId)
-      await sandbox.commands.run("cd /home/user/frontend && npm run dev", {
-        background: true,
-        requestTimeoutMs: 60_000*10*3,
-        timeoutMs: 60_000*10*3
-      })
+      const frontendUrl = `https://${sandbox.getHost(8081)}`
+      const backendUrl = `https://${sandbox.getHost(3000)}`
+
+      await sandbox.commands.run(
+        `cd /home/user/backend && touch .env && (grep -v '^PREVIEW_CORS_ORIGIN=' .env || true) > .env.tmp && printf 'PREVIEW_CORS_ORIGIN=%s\\n' '${frontendUrl}' >> .env.tmp && mv .env.tmp .env`
+      )
       await sandbox.commands.run("cd /home/user/backend && npm run dev", {
         background: true,
         requestTimeoutMs: 60_000*10*3,
         timeoutMs: 60_000*10*3
       })
-      const host = sandbox.getHost(8081)
-      return `https://${host}`
+      await sandbox.commands.run(
+        `cd /home/user/frontend && touch .env && (grep -v '^EXPO_PUBLIC_API_URL=' .env || true) > .env.tmp && printf 'EXPO_PUBLIC_API_URL=%s\\n' '${backendUrl}' >> .env.tmp && mv .env.tmp .env`
+      )
+      await sandbox.commands.run("cd /home/user/frontend && npm run dev", {
+        background: true,
+        requestTimeoutMs: 60_000*10*3,
+        timeoutMs: 60_000*10*3
+      })
+      return frontendUrl
     })
 
     await step.run("save-result", async () => {

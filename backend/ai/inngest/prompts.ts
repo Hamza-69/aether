@@ -22,6 +22,8 @@ FRONTEND  (/home/user/frontend)
   • Framework  : Expo (React Native) via react-native-reusables minimal template
   • Styling    : NativeWind (Tailwind classes on RN components)
   • Language   : TypeScript
+  • API config : Use Expo public env vars (EXPO_PUBLIC_*) via .env files
+                 (example: EXPO_PUBLIC_API_URL=https://api.example.com)
   • Verification: npx tsc --noEmit  (no full build required)
 
 ═══════════════════════════════════════════════════════════════════
@@ -167,6 +169,9 @@ DO'S
    Keep Prisma schema datasource block without a url field (it is set in prisma.config.ts).
    Use NativeWind className props for all styling in the frontend.
    Prefer the existing prisma client import path: "../generated/prisma/client.js".
+   Configure frontend API base URL through EXPO_PUBLIC_API_URL in .env (Expo public env method).
+   Keep EXPO_PUBLIC_API_URL origin-only (scheme + domain/subdomain + optional port), and append API routes in code.
+   Keep backend CORS origins env-driven (CORS_ALLOWED_ORIGINS and PREVIEW_CORS_ORIGIN), not hardcoded.
 
 ═══════════════════════════════════════════════════════════════════
 DON'TS
@@ -180,6 +185,9 @@ DON'TS
    Do not install packages that conflict with pinned versions in package.json.
    Do not write to files outside /home/user/backend or /home/user/frontend.
    Do not try to run the backend or frontend dev servers — rely on compiler checks and terminal for verification.
+   Do not hardcode localhost, 127.0.0.1, 0.0.0.0, or raw IP endpoints anywhere in frontend code.
+   Do not store route paths inside EXPO_PUBLIC_API_URL (e.g. no /api in the env value).
+   Do not hardcode backend CORS origins in source files.
 
 ═══════════════════════════════════════════════════════════════════
 OUTPUT FORMAT

@@ -204,6 +204,44 @@ function countOccurrences(haystack: string, needle: string): number {
   return count
 }
 
+function buildFrontendEndpointGuardrailNote(filePath: string, content: string): string | undefined {
+  if (!filePath.startsWith("/home/user/frontend")) return undefined
+
+  const hardcodedTargets = new Set<string>()
+
+  for (const match of content.matchAll(/https?:\/\/(?:localhost|(?:\d{1,3}\.){3}\d{1,3})(?::\d+)?(?:\/[^\s"'`)]*)?/gi)) {
+    hardcodedTargets.add(match[0])
+  }
+  for (const match of content.matchAll(/\blocalhost(?::\d+)?(?:\/[^\s"'`)]*)?/gi)) {
+    hardcodedTargets.add(match[0])
+  }
+  for (const match of content.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:\/[^\s"'`)]*)?/g)) {
+    hardcodedTargets.add(match[0])
+  }
+
+  const envRouteMatches = new Set<string>()
+  for (const match of content.matchAll(/EXPO_PUBLIC_API_URL\s*=\s*https?:\/\/[^\s/]+\/[^\s]+/g)) {
+    envRouteMatches.add(match[0])
+  }
+  for (const match of content.matchAll(/EXPO_PUBLIC_API_URL[^\n]*https?:\/\/[^\s"'`/]+\/[^\s"'`]+/g)) {
+    envRouteMatches.add(match[0])
+  }
+
+  if (hardcodedTargets.size === 0 && envRouteMatches.size === 0) return undefined
+
+  const details: string[] = []
+  if (hardcodedTargets.size > 0) {
+    const samples = Array.from(hardcodedTargets).slice(0, 3).join(", ")
+    details.push(`hardcoded localhost/IP endpoint(s): ${samples}`)
+  }
+  if (envRouteMatches.size > 0) {
+    const samples = Array.from(envRouteMatches).slice(0, 2).join(" | ")
+    details.push(`EXPO_PUBLIC_API_URL includes route path: ${samples}`)
+  }
+
+  return `Frontend endpoint guardrail note: detected ${details.join("; ")}. Keep frontend API config on EXPO_PUBLIC_API_URL in .env (example: EXPO_PUBLIC_API_URL=https://api.example.com) and keep the env value origin-only (no routes).`
+}
+
 export const editFileTool = createTool({
   name: "editFile",
   description: [
@@ -256,6 +294,7 @@ export const editFileTool = createTool({
           updated = current.slice(0, idx) + newString + current.slice(idx + oldString.length)
         }
 
+        const guardrailNote = buildFrontendEndpointGuardrailNote(filePath, updated)
         await sandbox.files.write(filePath, updated)
 
         const verify = await verifyAfterWrite(sandbox, filePath)
@@ -267,9 +306,15 @@ export const editFileTool = createTool({
             verifyStdout: verify.verifyStdout,
             verifyStderr: verify.verifyStderr,
             verifyExitCode: verify.verifyExitCode,
+            ...(guardrailNote ? { note: guardrailNote } : {}),
           }
         }
-        return { success: true, filePath, mode: "edit" as const }
+        return {
+          success: true,
+          filePath,
+          mode: "edit" as const,
+          ...(guardrailNote ? { note: guardrailNote } : {}),
+        }
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`
       }
@@ -296,6 +341,7 @@ export const createFileTool = createTool({
     return await step?.run(stepId("createFile"), async () => {
       try {
         const sandbox = await getSandbox(network.state.data.SandboxId)
+        const guardrailNote = buildFrontendEndpointGuardrailNote(filePath, content)
         await sandbox.files.write(filePath, content)
 
         const verify = await verifyAfterWrite(sandbox, filePath)
@@ -307,9 +353,15 @@ export const createFileTool = createTool({
             verifyStdout: verify.verifyStdout,
             verifyStderr: verify.verifyStderr,
             verifyExitCode: verify.verifyExitCode,
+            ...(guardrailNote ? { note: guardrailNote } : {}),
           }
         }
-        return { success: true, filePath, mode: "create" as const }
+        return {
+          success: true,
+          filePath,
+          mode: "create" as const,
+          ...(guardrailNote ? { note: guardrailNote } : {}),
+        }
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`
       }
