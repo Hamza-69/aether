@@ -12,6 +12,12 @@ import {
   UpsertSecretsBodySchema,
   DeploymentSchema,
   DeployResponseSchema,
+  APKSchema,
+  ApkDownloadUrlSchema,
+  ExportApkResponseSchema,
+  KeyStoreSummarySchema,
+  GenerateKeystoreResponseSchema,
+  GenerateKeystoreBodySchema,
 } from "./models"
 
 const registry = new OpenAPIRegistry()
@@ -25,6 +31,12 @@ registry.register("SecretSummary", SecretSummarySchema)
 registry.register("UpsertSecretsBody", UpsertSecretsBodySchema)
 registry.register("Deployment", DeploymentSchema)
 registry.register("DeployResponse", DeployResponseSchema)
+registry.register("APK", APKSchema)
+registry.register("ApkDownloadUrl", ApkDownloadUrlSchema)
+registry.register("ExportApkResponse", ExportApkResponseSchema)
+registry.register("KeyStoreSummary", KeyStoreSummarySchema)
+registry.register("GenerateKeystoreResponse", GenerateKeystoreResponseSchema)
+registry.register("GenerateKeystoreBody", GenerateKeystoreBodySchema)
 
 registry.registerPath({
   method: "get",
@@ -295,6 +307,168 @@ registry.registerPath({
     },
     404: {
       description: "Project not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "get",
+  path: "/api/projects/{projectId}/keystore",
+  tags: ["Keystore"],
+  summary: "Get keystore status and presence for a project",
+  description:
+    "Returns whether a keystore has been generated for this project, plus the current keyStoreStatus lock. Keystore bytes and password are never returned by the API.",
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+  },
+  responses: {
+    200: {
+      description: "Keystore summary",
+      content: { "application/json": { schema: KeyStoreSummarySchema } },
+    },
+    404: {
+      description: "Project not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "post",
+  path: "/api/projects/{projectId}/keystore",
+  tags: ["Keystore"],
+  summary: "Generate and store a signing keystore for the project",
+  description:
+    "Unique idempotency rules: (a) if a keystore already exists, returns 200 with alreadyExists=true and does NOT regenerate (regenerating would orphan previously-signed APKs). (b) if keyStoreStatus is SCHEDULED/RUNNING under the stale cutoff, returns 409. (c) otherwise atomically claims the IDLE→SCHEDULED lock and enqueues the generate-keystore/run Inngest job. You can optionally pass subject overrides in the request body. Missing subject fields are auto-derived from the project name (countryCode defaults to US). The job spins up a generate-keystore sandbox, generates a random base64 password via openssl, runs keytool to produce a PKCS12 release.keystore, and persists both (encrypted password + keystore bytes) in the KeyStore row for the project. Returns 202 when scheduled; generation completes asynchronously.",
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+    body: {
+      required: false,
+      content: { "application/json": { schema: GenerateKeystoreBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Keystore already exists — no-op",
+      content: { "application/json": { schema: GenerateKeystoreResponseSchema } },
+    },
+    202: {
+      description: "Keystore generation scheduled",
+      content: { "application/json": { schema: GenerateKeystoreResponseSchema } },
+    },
+    400: {
+      description: "Invalid request body",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Project not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description: "Keystore generation already in progress",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "get",
+  path: "/api/projects/{projectId}/apks",
+  tags: ["APK"],
+  summary: "List all exported APKs for a project (read-only)",
+  description:
+    "Returns every APK exported for the project, newest first. Each APK row's `url` is the S3/Tigris object key under the project's bucket; resolve it to a download URL via the storage layer. APKs are created only by the export-apk background job.",
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+  },
+  responses: {
+    200: {
+      description: "APKs list (most recent first)",
+      content: {
+        "application/json": {
+          schema: z.object({ apks: z.array(APKSchema) }),
+        },
+      },
+    },
+    404: {
+      description: "Project not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "get",
+  path: "/api/projects/{projectId}/apks/{apkId}/download-url",
+  tags: ["APK"],
+  summary: "Get a time-limited download URL for an exported APK",
+  description:
+    "Returns a presigned S3/Tigris URL for the APK artifact that is valid for 1 hour. The client should use this URL directly to download the .apk file. After expiry, request a fresh URL from this endpoint.",
+  request: {
+    params: z.object({
+      projectId: z.string().openapi({ example: "clxyz123" }),
+      apkId: z.string().openapi({ example: "clapk456" }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Presigned download URL (valid 1 hour)",
+      content: { "application/json": { schema: ApkDownloadUrlSchema } },
+    },
+    404: {
+      description: "APK not found for this project",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "post",
+  path: "/api/projects/{projectId}/export-apk",
+  tags: ["APK"],
+  summary: "Export a signed Android APK for the project's frontend",
+  description:
+    "Validates that the project has (a) a keystore generated via POST /api/projects/{projectId}/keystore, (b) an EXPO_TOKEN secret (Expo personal access token used to auth eas-cli), (c) at least one prior deployment (whose URL becomes EXPO_PUBLIC_API_URL in the APK's .env), and (d) a runnable frontend fragment. Then atomically claims the apkStatus IDLE→SCHEDULED lock and enqueues the export-apk/run Inngest job. The job restores the latest frontend tar in a lightweight eas-cli sandbox, writes .env with EXPO_PUBLIC_API_URL pointing to the latest deployment, writes the decrypted keystore bytes to my-upload-key.keystore in the frontend root, runs eas-build.sh (which writes credentials.json + eas.json for local-credentials signing, then invokes `eas build --platform android --profile production-apk --non-interactive --json` blocking). The resulting artifact URL is fetched from the EAS JSON output, the APK is downloaded and uploaded to S3, an APK row is recorded, and an assistant message is emitted. Returns 202 immediately; the export completes asynchronously.",
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+  },
+  responses: {
+    202: {
+      description: "APK export scheduled",
+      content: { "application/json": { schema: ExportApkResponseSchema } },
+    },
+    400: {
+      description:
+        "Keystore not generated, EXPO_TOKEN secret not set, or no deployment exists for this project",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Project or runnable frontend fragment not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description: "An APK export is already in progress for this project",
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {

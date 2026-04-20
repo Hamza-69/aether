@@ -8,6 +8,8 @@ import { messagesRouter } from "./controllers/messages"
 import { codeAgentFunction } from "./ai/inngest/jobs/agent"
 import { previewProjectFunction } from "./ai/inngest/jobs/preview"
 import { deployProjectFunction } from "./ai/inngest/jobs/deploy"
+import { generateKeystoreFunction } from "./ai/inngest/jobs/generate-keystore"
+import { exportApkFunction } from "./ai/inngest/jobs/export-apk"
 import { apiReference } from "@scalar/express-api-reference"
 import { openApiSpec } from "./openapi-registry"
 
@@ -34,7 +36,19 @@ app.use(
   }),
 )
 
-app.use("/api/inngest", serve({ client: inngest, functions: [codeAgentFunction, previewProjectFunction, deployProjectFunction] }))
+app.use(
+  "/api/inngest",
+  serve({
+    client: inngest,
+    functions: [
+      codeAgentFunction,
+      previewProjectFunction,
+      deployProjectFunction,
+      generateKeystoreFunction,
+      exportApkFunction,
+    ],
+  }),
+)
 app.use("/api/projects", projectsRouter)
 app.use("/api/messages", messagesRouter)
 

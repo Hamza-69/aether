@@ -5,12 +5,18 @@ import { inngest } from "../ai/inngest/client"
 import { CreateProjectBodySchema } from "../models"
 import { secretsRouter } from "./secrets"
 import { deploymentsRouter, deployProjectHandler } from "./deployments"
+import { keystoresRouter, generateKeystoreHandler } from "./keystores"
+import { apksRouter, exportApkHandler } from "./apks"
 
 export const projectsRouter = Router()
 
 projectsRouter.use("/:projectId/secrets", secretsRouter)
 projectsRouter.use("/:projectId/deployments", deploymentsRouter)
 projectsRouter.post("/:projectId/deploy", deployProjectHandler)
+projectsRouter.use("/:projectId/keystore", keystoresRouter)
+projectsRouter.post("/:projectId/keystore", generateKeystoreHandler)
+projectsRouter.use("/:projectId/apks", apksRouter)
+projectsRouter.post("/:projectId/export-apk", exportApkHandler)
 
 const toKebabCase = (str: string) =>
   str

@@ -22,10 +22,10 @@ export async function uploadState(key: string, fileBuffer: Buffer | Uint8Array) 
 export const ZERO_STATE_FRONTEND_KEY = "zero-state/frontend.tar.gz"
 export const ZERO_STATE_BACKEND_KEY = "zero-state/backend.tar.gz"
 
-export async function getStateDownloadUrl(key: string) {
+export async function getStateDownloadUrl(key: string, expiresIn = 300) {
   const command = new GetObjectCommand({
     Bucket: process.env.BUCKET_NAME!,
     Key: key,
   })
-  return getSignedUrl(tigris, command, { expiresIn: 300 })
+  return getSignedUrl(tigris, command, { expiresIn })
 }

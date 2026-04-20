@@ -4,8 +4,8 @@ import { template } from './template'
 async function main() {
   await Template.build(template, {
     alias: 'build-apk',
-    cpuCount: 8,
-    memoryMB: 8192,
+    cpuCount: 2,
+    memoryMB: 2048,
     onBuildLogs: defaultBuildLogger(),
   });
 }

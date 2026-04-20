@@ -29,6 +29,18 @@ enum DeploymentStatus {
   RUNNING
 }
 
+enum KeyStoreStatus {
+  IDLE
+  SCHEDULED
+  RUNNING
+}
+
+enum ApkStatus {
+  IDLE
+  SCHEDULED
+  RUNNING
+}
+
 model ExpoDocs {
   id        String                 @id @default(cuid())
   content   String?
@@ -55,6 +67,12 @@ model Project {
 
   deploymentStatus    DeploymentStatus @default(IDLE)
   deploymentStartedAt DateTime?        @db.Timestamptz(3)
+
+  keyStoreStatus    KeyStoreStatus @default(IDLE)
+  keyStoreStartedAt DateTime?      @db.Timestamptz(3)
+
+  apkStatus    ApkStatus @default(IDLE)
+  apkStartedAt DateTime? @db.Timestamptz(3)
 
   messages    Message[]
   apks        APK[]
@@ -116,7 +134,7 @@ model Fragment {
 
 model KeyStore {
   id        String   @id @default(cuid())
-  password  String
+  password  Bytes
   data      Bytes
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
