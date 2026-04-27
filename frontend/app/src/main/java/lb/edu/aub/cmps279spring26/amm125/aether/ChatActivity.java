@@ -5,20 +5,22 @@ import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
-import android.widget.PopupMenu;
+import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.snackbar.BaseTransientBottomBar;
+import com.google.android.material.snackbar.Snackbar;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -58,7 +60,7 @@ public class ChatActivity extends AppCompatActivity {
         btnBack.setOnClickListener(v -> finish());
 
         ImageView btnOptions = findViewById(R.id.btnOptions);
-        btnOptions.setOnClickListener(this::showOptionsMenu);
+        btnOptions.setOnClickListener(this::showEnhancedOptionsMenu);
 
         rvChat = findViewById(R.id.rvChat);
         etMessage = findViewById(R.id.etChatMessage);
@@ -96,7 +98,6 @@ public class ChatActivity extends AppCompatActivity {
             String text = etMessage.getText().toString().trim();
             if (!TextUtils.isEmpty(text)) {
                 sendMessage(text);
-                hasUnpublishedChanges = true;
             }
         });
     }
@@ -113,57 +114,109 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    private void showOptionsMenu(View v) {
-        PopupMenu popup = new PopupMenu(this, v);
-        
-        popup.getMenu().add(0, 1, 0, "Deploy App");
-        
-        if ("Published".equalsIgnoreCase(projectStatus)) {
-            popup.getMenu().add(0, 2, 1, "Unpublish");
-        } else {
-            popup.getMenu().add(0, 3, 1, "Publish");
-        }
-        
-        if (hasUnpublishedChanges) {
-            popup.getMenu().add(0, 4, 2, "Update and Publish");
-        }
-        
-        popup.getMenu().add(0, 5, 3, "Export APK");
-        popup.getMenu().add(0, 6, 4, "Delete Project");
+    private void showEnhancedOptionsMenu(View v) {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(R.layout.dialog_chat_options);
 
-        popup.setOnMenuItemClickListener(item -> {
-            switch (item.getItemId()) {
-                case 1:
-                    showViewMode();
-                    Toast.makeText(this, "Deploying App...", Toast.LENGTH_SHORT).show();
-                    return true;
-                case 2:
-                    projectStatus = "Not Published";
-                    updateStatusUI();
-                    Toast.makeText(this, "Project unpublished", Toast.LENGTH_SHORT).show();
-                    return true;
-                case 3:
-                    projectStatus = "Published";
-                    updateStatusUI();
-                    hasUnpublishedChanges = false;
-                    Toast.makeText(this, "Project published!", Toast.LENGTH_SHORT).show();
-                    return true;
-                case 4:
-                    projectStatus = "Published";
-                    updateStatusUI();
-                    hasUnpublishedChanges = false;
-                    Toast.makeText(this, "Project updated and published!", Toast.LENGTH_SHORT).show();
-                    return true;
-                case 5:
-                    Toast.makeText(this, "Exporting APK...", Toast.LENGTH_SHORT).show();
-                    return true;
-                case 6:
-                    showDeleteConfirmationDialog();
-                    return true;
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            
+            // Positioning it near the top right button
+            Window window = dialog.getWindow();
+            window.setGravity(Gravity.TOP | Gravity.END);
+            
+            // Add some offset from the top/right
+            android.view.WindowManager.LayoutParams params = window.getAttributes();
+            params.x = 20; // pixels from right
+            params.y = 120; // pixels from top
+            window.setAttributes(params);
+            
+            window.setWindowAnimations(android.R.style.Animation_Dialog);
+        }
+
+        LinearLayout optDeploy = dialog.findViewById(R.id.optionDeploy);
+        LinearLayout optPublish = dialog.findViewById(R.id.optionPublish);
+        LinearLayout optUpdate = dialog.findViewById(R.id.optionUpdate);
+        LinearLayout optExport = dialog.findViewById(R.id.optionExport);
+        LinearLayout optDelete = dialog.findViewById(R.id.optionDelete);
+        
+        ImageView ivPublishIcon = dialog.findViewById(R.id.ivPublishIcon);
+        TextView tvPublishText = dialog.findViewById(R.id.tvPublishText);
+
+        boolean isPublished = "Published".equalsIgnoreCase(projectStatus);
+        
+        if (isPublished) {
+            tvPublishText.setText("Unpublish");
+            ivPublishIcon.setImageResource(R.drawable.ic_back);
+            ivPublishIcon.setImageTintList(android.content.res.ColorStateList.valueOf(Color.GRAY));
+            
+            if (hasUnpublishedChanges) {
+                optUpdate.setVisibility(View.VISIBLE);
             }
-            return false;
+        } else {
+            tvPublishText.setText("Publish");
+            ivPublishIcon.setImageResource(R.drawable.ic_sparkle);
+            ivPublishIcon.setImageTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#00BFA5")));
+        }
+
+        optDeploy.setOnClickListener(view -> {
+            showViewMode();
+            showSuccessSnackbar("Deploying application preview...");
+            dialog.dismiss();
         });
-        popup.show();
+
+        optPublish.setOnClickListener(view -> {
+            if (isPublished) {
+                projectStatus = "Not Published";
+                showInfoSnackbar("Project unpublished");
+            } else {
+                projectStatus = "Published";
+                hasUnpublishedChanges = false;
+                showSuccessSnackbar("Project published successfully!");
+            }
+            updateStatusUI();
+            dialog.dismiss();
+        });
+
+        optUpdate.setOnClickListener(view -> {
+            projectStatus = "Published";
+            hasUnpublishedChanges = false;
+            updateStatusUI();
+            showSuccessSnackbar("Project updated and published!");
+            dialog.dismiss();
+        });
+
+        optExport.setOnClickListener(view -> {
+            showInfoSnackbar("Preparing APK for export...");
+            dialog.dismiss();
+        });
+
+        optDelete.setOnClickListener(view -> {
+            dialog.dismiss();
+            showDeleteConfirmationDialog();
+        });
+
+        dialog.show();
+    }
+
+    private void showSuccessSnackbar(String message) {
+        View contextView = findViewById(android.R.id.content);
+        Snackbar snackbar = Snackbar.make(contextView, message, Snackbar.LENGTH_SHORT);
+        snackbar.setBackgroundTint(Color.parseColor("#323232"));
+        snackbar.setTextColor(Color.WHITE);
+        snackbar.setAnimationMode(BaseTransientBottomBar.ANIMATION_MODE_SLIDE);
+        snackbar.show();
+    }
+
+    private void showInfoSnackbar(String message) {
+        View contextView = findViewById(android.R.id.content);
+        Snackbar snackbar = Snackbar.make(contextView, message, Snackbar.LENGTH_SHORT);
+        snackbar.setBackgroundTint(Color.parseColor("#323232"));
+        snackbar.setTextColor(Color.WHITE);
+        snackbar.setAnimationMode(BaseTransientBottomBar.ANIMATION_MODE_SLIDE);
+        snackbar.show();
     }
 
     private void showDeleteConfirmationDialog() {
@@ -180,9 +233,9 @@ public class ChatActivity extends AppCompatActivity {
         Button btnCancel = dialog.findViewById(R.id.btnCancelDelete);
 
         btnDelete.setOnClickListener(v -> {
-            Toast.makeText(this, "Project deleted", Toast.LENGTH_SHORT).show();
+            showInfoSnackbar("Project deleted");
             dialog.dismiss();
-            finish(); // Go back to home
+            findViewById(android.R.id.content).postDelayed(this::finish, 1000);
         });
 
         btnCancel.setOnClickListener(v -> dialog.dismiss());
@@ -225,7 +278,7 @@ public class ChatActivity extends AppCompatActivity {
             messageList.add(new ChatMessage(response, false));
             adapter.notifyItemInserted(messageList.size() - 1);
             rvChat.scrollToPosition(messageList.size() - 1);
-            hasUnpublishedChanges = true; // Changes ready to be published
+            hasUnpublishedChanges = true;
         }, 1200);
     }
 }

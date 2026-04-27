@@ -4,18 +4,20 @@ import android.app.Dialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
 import android.widget.ImageView;
-import android.widget.PopupMenu;
+import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.snackbar.BaseTransientBottomBar;
+import com.google.android.material.snackbar.Snackbar;
 import java.util.List;
 
 public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectViewHolder> {
@@ -44,37 +46,130 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         Project project = projects.get(position);
         holder.tvTitle.setText(project.getTitle());
         
-        if ("Published".equalsIgnoreCase(project.getStatus())) {
-            holder.tvStatus.setText("Published");
-            holder.statusCard.setCardBackgroundColor(0xFF00BFA5);
-        } else {
-            holder.tvStatus.setText("Not Published");
-            holder.statusCard.setCardBackgroundColor(0xFFFFB300);
-        }
+        updateStatusUI(holder, project.getStatus());
 
         // Click on the project card to open ChatActivity
         holder.itemView.setOnClickListener(v -> {
             Intent intent = new Intent(v.getContext(), ChatActivity.class);
             intent.putExtra("PROJECT_TITLE", project.getTitle());
             intent.putExtra("PROJECT_DESC", project.getDescription());
+            intent.putExtra("PROJECT_STATUS", project.getStatus());
             v.getContext().startActivity(intent);
         });
 
         holder.optionsCard.setOnClickListener(v -> {
-            PopupMenu popup = new PopupMenu(v.getContext(), v);
-            popup.getMenu().add("Delete Project");
-            popup.setOnMenuItemClickListener(item -> {
-                if (item.getTitle().equals("Delete Project")) {
-                    showCustomDeleteDialog(v.getContext(), position);
-                    return true;
-                }
-                return false;
-            });
-            popup.show();
+            showEnhancedOptionsMenu(v, project, position);
         });
     }
 
-    private void showCustomDeleteDialog(android.content.Context context, int position) {
+    private void updateStatusUI(ProjectViewHolder holder, String status) {
+        if ("Published".equalsIgnoreCase(status)) {
+            holder.tvStatus.setText("Published");
+            holder.statusCard.setCardBackgroundColor(0xFF00BFA5);
+        } else {
+            holder.tvStatus.setText("Not Published");
+            holder.statusCard.setCardBackgroundColor(0xFFFFB300);
+        }
+    }
+
+    private void showEnhancedOptionsMenu(View v, Project project, int position) {
+        final Dialog dialog = new Dialog(v.getContext());
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(R.layout.dialog_chat_options);
+
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            
+            Window window = dialog.getWindow();
+            window.setGravity(Gravity.TOP | Gravity.END);
+            
+            int[] location = new int[2];
+            v.getLocationOnScreen(location);
+            
+            android.view.WindowManager.LayoutParams params = window.getAttributes();
+            params.x = 20; 
+            params.y = location[1] + v.getHeight(); 
+            window.setAttributes(params);
+            
+            window.setWindowAnimations(android.R.style.Animation_Dialog);
+        }
+
+        LinearLayout optDeploy = dialog.findViewById(R.id.optionDeploy);
+        LinearLayout optPublish = dialog.findViewById(R.id.optionPublish);
+        LinearLayout optUpdate = dialog.findViewById(R.id.optionUpdate);
+        LinearLayout optExport = dialog.findViewById(R.id.optionExport);
+        LinearLayout optDelete = dialog.findViewById(R.id.optionDelete);
+        
+        ImageView ivPublishIcon = dialog.findViewById(R.id.ivPublishIcon);
+        TextView tvPublishText = dialog.findViewById(R.id.tvPublishText);
+
+        boolean isPublished = "Published".equalsIgnoreCase(project.getStatus());
+        
+        if (isPublished) {
+            tvPublishText.setText("Unpublish");
+            ivPublishIcon.setImageResource(R.drawable.ic_back);
+            ivPublishIcon.setImageTintList(android.content.res.ColorStateList.valueOf(Color.GRAY));
+        } else {
+            tvPublishText.setText("Publish");
+            ivPublishIcon.setImageResource(R.drawable.ic_sparkle);
+            ivPublishIcon.setImageTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#00BFA5")));
+        }
+
+        optDeploy.setOnClickListener(view -> {
+            showInfoSnackbar(v, "Deploying application preview...");
+            dialog.dismiss();
+        });
+
+        optPublish.setOnClickListener(view -> {
+            if (isPublished) {
+                project.setStatus("Not Published");
+                showInfoSnackbar(v, "Project unpublished");
+            } else {
+                project.setStatus("Published");
+                showSuccessSnackbar(v, "Project published successfully!");
+            }
+            notifyItemChanged(position);
+            dialog.dismiss();
+        });
+
+        optUpdate.setOnClickListener(view -> {
+            project.setStatus("Published");
+            notifyItemChanged(position);
+            showSuccessSnackbar(v, "Project updated and published!");
+            dialog.dismiss();
+        });
+
+        optExport.setOnClickListener(view -> {
+            showInfoSnackbar(v, "Preparing APK for export...");
+            dialog.dismiss();
+        });
+
+        optDelete.setOnClickListener(view -> {
+            dialog.dismiss();
+            showCustomDeleteDialog(v.getContext(), position, v);
+        });
+
+        dialog.show();
+    }
+
+    private void showSuccessSnackbar(View view, String message) {
+        Snackbar snackbar = Snackbar.make(view, message, Snackbar.LENGTH_SHORT);
+        snackbar.setBackgroundTint(Color.parseColor("#323232"));
+        snackbar.setTextColor(Color.WHITE);
+        snackbar.setAnimationMode(BaseTransientBottomBar.ANIMATION_MODE_SLIDE);
+        snackbar.show();
+    }
+
+    private void showInfoSnackbar(View view, String message) {
+        Snackbar snackbar = Snackbar.make(view, message, Snackbar.LENGTH_SHORT);
+        snackbar.setBackgroundTint(Color.parseColor("#323232"));
+        snackbar.setTextColor(Color.WHITE);
+        snackbar.setAnimationMode(BaseTransientBottomBar.ANIMATION_MODE_SLIDE);
+        snackbar.show();
+    }
+
+    private void showCustomDeleteDialog(android.content.Context context, int position, View view) {
         final Dialog dialog = new Dialog(context);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setContentView(R.layout.dialog_confirm_delete);
@@ -94,7 +189,7 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
             if (deleteListener != null) {
                 deleteListener.onProjectDeleted();
             }
-            Toast.makeText(context, "Project deleted permanently", Toast.LENGTH_SHORT).show();
+            showInfoSnackbar(view, "Project deleted permanently");
             dialog.dismiss();
         });
 

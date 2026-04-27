@@ -14,4 +14,5 @@ public class Project {
     public String getTitle() { return title; }
     public String getDescription() { return description; }
     public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
 }

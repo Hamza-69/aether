@@ -10,4 +10,9 @@
     <style name="ShapeAppearance.Aether.Circle" parent="ShapeAppearance.Material3.MediumComponent">
         <item name="cornerSize">50%</item>
     </style>
+
+    <style name="DialogAnimation">
+        <item name="android:windowEnterAnimation">@android:anim/slide_in_left</item>
+        <item name="android:windowExitAnimation">@android:anim/slide_out_right</item>
+    </style>
 </resources>
