@@ -12,6 +12,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Aether">
         <activity
+            android:name=".PreviewActivity"
+            android:exported="false" />
+        <activity
+            android:name=".DiscoverActivity"
+            android:exported="false" />
+        <activity
             android:name=".ChatActivity"
             android:exported="false" />
         <activity

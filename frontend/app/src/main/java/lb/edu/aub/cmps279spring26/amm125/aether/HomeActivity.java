@@ -9,22 +9,22 @@ import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.TextView;
-
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
-
+import com.google.android.material.card.MaterialCardView;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,7 +32,7 @@ public class HomeActivity extends AppCompatActivity {
 
     private RecyclerView rvProjects;
     private ProjectAdapter adapter;
-    private List<Project> projectList;
+    public static List<Project> userProjects = new ArrayList<>();
     private TextView tvProjectCount;
 
     @Override
@@ -45,137 +45,140 @@ public class HomeActivity extends AppCompatActivity {
         BottomNavigationView bottomNav = findViewById(R.id.bottomNav);
         FloatingActionButton fabAdd = findViewById(R.id.fabAdd);
 
-        projectList = new ArrayList<>();
-
-        projectList.add(new Project("Fitness Tracker", "Modern UI for health tracking", "Published"));
-        projectList.add(new Project("E-commerce App", "AI-driven shopping experience", "Draft"));
-        projectList.add(new Project("Smart Home", "Control your home appliances", "Published"));
-        projectList.add(new Project("Recipe Finder", "Find dishes by ingredients", "Published"));
+        if (userProjects.isEmpty()) {
+            userProjects.add(new Project("Fitness Tracker", "Modern UI for health tracking", "Published"));
+            userProjects.add(new Project("E-commerce App", "AI-driven shopping experience", "Draft"));
+            userProjects.add(new Project("Smart Home", "Control your home appliances", "Published"));
+            userProjects.add(new Project("Recipe Finder", "Find dishes by ingredients", "Published"));
+        }
 
         updateProjectCount();
 
-        adapter = new ProjectAdapter(projectList, this::updateProjectCount);
+        adapter = new ProjectAdapter(userProjects, this::updateProjectCount);
         rvProjects.setLayoutManager(new LinearLayoutManager(this));
         rvProjects.setAdapter(adapter);
 
         fabAdd.setOnClickListener(v -> showCreateProjectDialog());
 
-        bottomNav.setSelectedItemId(R.id.nav_home);
+        View btnSearch = findViewById(R.id.btnSearchContainer);
+        if (btnSearch != null) {
+            btnSearch.setOnClickListener(v -> showSearchDialog(userProjects));
+        }
 
+        bottomNav.setSelectedItemId(R.id.nav_home);
         bottomNav.setOnItemSelectedListener(item -> {
             int id = item.getItemId();
-
-            if (id == R.id.nav_home) {
+            if (id == R.id.nav_home) return true;
+            else if (id == R.id.nav_discover) {
+                startActivity(new Intent(this, DiscoverActivity.class));
+                overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left);
+                finish();
                 return true;
             }
-
             return true;
         });
     }
 
+    private void showSearchDialog(List<Project> sourceList) {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(R.layout.dialog_search);
+
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            dialog.getWindow().setGravity(Gravity.TOP);
+            
+            // Add margin from top
+            android.view.WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
+            params.y = 40; 
+            dialog.getWindow().setAttributes(params);
+        }
+
+        EditText etSearch = dialog.findViewById(R.id.etSearch);
+        ImageView ivClear = dialog.findViewById(R.id.ivClearSearch);
+        RecyclerView rvResults = dialog.findViewById(R.id.rvSearchResults);
+        
+        MaterialCardView btnMyProjects = dialog.findViewById(R.id.btnSearchMyProjects);
+        MaterialCardView btnDiscover = dialog.findViewById(R.id.btnSearchDiscover);
+        TextView tvMyProjects = dialog.findViewById(R.id.tvSearchMyProjects);
+        TextView tvDiscover = dialog.findViewById(R.id.tvSearchDiscover);
+        
+        // Initial state for Home: My Projects selected
+        etSearch.setHint("Search your projects...");
+        btnMyProjects.setCardBackgroundColor(Color.parseColor("#7C4DFF"));
+        tvMyProjects.setTextColor(Color.WHITE);
+        btnDiscover.setCardBackgroundColor(Color.parseColor("#F5F5F5"));
+        tvDiscover.setTextColor(Color.parseColor("#1A1A1A"));
+
+        List<Project> searchResults = new ArrayList<>();
+        ProjectAdapter searchAdapter = new ProjectAdapter(searchResults, null);
+        rvResults.setLayoutManager(new LinearLayoutManager(this));
+        rvResults.setAdapter(searchAdapter);
+
+        etSearch.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String query = s.toString().toLowerCase().trim();
+                ivClear.setVisibility(query.isEmpty() ? View.GONE : View.VISIBLE);
+
+                searchResults.clear();
+                if (!query.isEmpty()) {
+                    for (Project p : sourceList) {
+                        if (p.getTitle().toLowerCase().contains(query) || p.getDescription().toLowerCase().contains(query)) {
+                            searchResults.add(p);
+                        }
+                    }
+                }
+                searchAdapter.notifyDataSetChanged();
+            }
+            @Override
+            public void afterTextChanged(Editable s) {}
+        });
+
+        ivClear.setOnClickListener(v -> etSearch.setText(""));
+        
+        ImageView ivClose = dialog.findViewById(R.id.ivCloseSearch);
+        if (ivClose != null) {
+            ivClose.setOnClickListener(v -> dialog.dismiss());
+        }
+
+        dialog.show();
+    }
+
     private void showCreateProjectDialog() {
         final Dialog dialog = new Dialog(this);
-
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setContentView(R.layout.dialog_create_project);
-
         dialog.show();
 
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            dialog.getWindow().setLayout(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-            );
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         }
 
         View ivClose = dialog.findViewById(R.id.ivClose);
-        Button btnCancel = dialog.findViewById(R.id.btnCancel);
         Button btnCreate = dialog.findViewById(R.id.btnCreate);
-
         EditText etName = dialog.findViewById(R.id.etProjectName);
         EditText etDesc = dialog.findViewById(R.id.etProjectDesc);
 
-        ChipGroup chipGroup = dialog.findViewById(R.id.chipGroupSuggestions);
-
         ivClose.setOnClickListener(v -> dialog.dismiss());
-        btnCancel.setOnClickListener(v -> dialog.dismiss());
-
-        btnCreate.setEnabled(false);
-        btnCreate.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#E0E0E0")));
-
-        if (chipGroup != null) {
-            for (int i = 0; i < chipGroup.getChildCount(); i++) {
-                View child = chipGroup.getChildAt(i);
-                if (child instanceof Chip) {
-                    Chip chip = (Chip) child;
-                    chip.setOnClickListener(v -> {
-                        String suggestion = chip.getText().toString();
-
-                        if (suggestion.equals("Task Manager")) {
-                            etName.setText("Task Management App");
-                            etDesc.setText("Create a comprehensive task management application that includes features like user authentication, categories, due dates, priority levels, and progress tracking with data visualization.");
-                        } else if (suggestion.equals("Recipe Finder")) {
-                            etName.setText("AI Recipe Finder");
-                            etDesc.setText("Build an AI-powered recipe discovery app where users can input available ingredients to receive meal suggestions, step-by-step cooking instructions, and nutritional information.");
-                        } else if (suggestion.equals("Habit Tracker")) {
-                            etName.setText("Daily Habit Tracker");
-                            etDesc.setText("Design a habit tracking tool that helps users form positive routines through streaks, customizable reminders, daily logs, and insightful analytics on their performance.");
-                        }
-                    });
-                }
-            }
-        }
-
-        TextWatcher createWatcher = new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-                boolean hasName = !TextUtils.isEmpty(etName.getText().toString().trim());
-                boolean hasDesc = !TextUtils.isEmpty(etDesc.getText().toString().trim());
-
-                if (hasName && hasDesc) {
-                    btnCreate.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#00B0FF")));
-                    btnCreate.setEnabled(true);
-                    btnCreate.setTextColor(Color.WHITE);
-                } else {
-                    btnCreate.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#E0E0E0")));
-                    btnCreate.setEnabled(false);
-                    btnCreate.setTextColor(Color.parseColor("#9E9E9E"));
-                }
-            }
-
-            @Override
-            public void afterTextChanged(Editable s) {}
-        };
-
-        etName.addTextChangedListener(createWatcher);
-        etDesc.addTextChangedListener(createWatcher);
 
         btnCreate.setOnClickListener(v -> {
             String name = etName.getText().toString().trim();
             String desc = etDesc.getText().toString().trim();
-            String status = "Not Published";
-
-            if (!TextUtils.isEmpty(name) && !TextUtils.isEmpty(desc)) {
-                projectList.add(0, new Project(name, desc, status));
+            if (!TextUtils.isEmpty(name)) {
+                userProjects.add(0, new Project(name, desc, "Not Published"));
                 adapter.notifyItemInserted(0);
-                rvProjects.scrollToPosition(0);
                 updateProjectCount();
                 dialog.dismiss();
-
-                Intent intent = new Intent(HomeActivity.this, ChatActivity.class);
-                intent.putExtra("PROJECT_TITLE", name);
-                intent.putExtra("PROJECT_DESC", desc);
-                intent.putExtra("PROJECT_STATUS", status);
-                startActivity(intent);
             }
         });
     }
 
     private void updateProjectCount() {
-        tvProjectCount.setText(projectList.size() + " total");
+        tvProjectCount.setText(userProjects.size() + " total");
     }
 }

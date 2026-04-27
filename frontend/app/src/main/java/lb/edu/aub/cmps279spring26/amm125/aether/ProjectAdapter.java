@@ -10,9 +10,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.card.MaterialCardView;
@@ -48,7 +50,6 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         
         updateStatusUI(holder, project.getStatus());
 
-        // Click on the project card to open ChatActivity
         holder.itemView.setOnClickListener(v -> {
             Intent intent = new Intent(v.getContext(), ChatActivity.class);
             intent.putExtra("PROJECT_TITLE", project.getTitle());
@@ -80,22 +81,19 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             dialog.getWindow().setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            
             Window window = dialog.getWindow();
             window.setGravity(Gravity.TOP | Gravity.END);
-            
             int[] location = new int[2];
             v.getLocationOnScreen(location);
-            
             android.view.WindowManager.LayoutParams params = window.getAttributes();
             params.x = 20; 
             params.y = location[1] + v.getHeight(); 
             window.setAttributes(params);
-            
             window.setWindowAnimations(android.R.style.Animation_Dialog);
         }
 
         LinearLayout optDeploy = dialog.findViewById(R.id.optionDeploy);
+        LinearLayout optRename = dialog.findViewById(R.id.optionRename);
         LinearLayout optPublish = dialog.findViewById(R.id.optionPublish);
         LinearLayout optUpdate = dialog.findViewById(R.id.optionUpdate);
         LinearLayout optExport = dialog.findViewById(R.id.optionExport);
@@ -119,6 +117,11 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         optDeploy.setOnClickListener(view -> {
             showInfoSnackbar(v, "Deploying application preview...");
             dialog.dismiss();
+        });
+
+        optRename.setOnClickListener(view -> {
+            dialog.dismiss();
+            showRenameDialog(v.getContext(), project, position, v);
         });
 
         optPublish.setOnClickListener(view -> {
@@ -149,6 +152,58 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
             dialog.dismiss();
             showCustomDeleteDialog(v.getContext(), position, v);
         });
+
+        dialog.show();
+    }
+
+    private void showRenameDialog(android.content.Context context, Project project, int position, View view) {
+        final Dialog dialog = new Dialog(context);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(R.layout.dialog_create_project);
+
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+
+        // Corrected IDs based on dialog_create_project.xml
+        TextView tvTitle = dialog.findViewById(R.id.tvTitle);
+        if (tvTitle != null) tvTitle.setText("Rename Project");
+        
+        TextView tvSubtitle = dialog.findViewById(R.id.tvSubtitle);
+        if (tvSubtitle != null) tvSubtitle.setText("Update your project's name");
+
+        EditText etName = dialog.findViewById(R.id.etProjectName);
+        EditText etDesc = dialog.findViewById(R.id.etProjectDesc);
+        View tvSuggestions = dialog.findViewById(R.id.tvSuggestions);
+        View chipGroup = dialog.findViewById(R.id.chipGroupSuggestions);
+        
+        // Hide description and suggestions for rename mode
+        if (etDesc != null) ((View)etDesc.getParent()).setVisibility(View.GONE);
+        if (tvSuggestions != null) tvSuggestions.setVisibility(View.GONE);
+        if (chipGroup != null) chipGroup.setVisibility(View.GONE);
+
+        etName.setText(project.getTitle());
+        etName.setSelection(etName.getText().length());
+
+        Button btnSave = dialog.findViewById(R.id.btnCreate);
+        if (btnSave != null) {
+            btnSave.setText("Save Changes");
+            btnSave.setEnabled(true);
+            btnSave.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#00B0FF")));
+            btnSave.setOnClickListener(v -> {
+                String newName = etName.getText().toString().trim();
+                if (!newName.isEmpty()) {
+                    project.setTitle(newName);
+                    notifyItemChanged(position);
+                    showSuccessSnackbar(view, "Project renamed successfully");
+                    dialog.dismiss();
+                }
+            });
+        }
+
+        Button btnCancel = dialog.findViewById(R.id.btnCancel);
+        if (btnCancel != null) btnCancel.setOnClickListener(v -> dialog.dismiss());
 
         dialog.show();
     }
