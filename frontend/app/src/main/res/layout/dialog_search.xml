@@ -51,14 +51,6 @@
                         android:background="@null"
                         android:hint="Search..."
                         android:textSize="14sp" />
-
-                    <ImageView
-                        android:id="@+id/ivClearSearch"
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@android:drawable/ic_menu_close_clear_cancel"
-                        android:visibility="gone"
-                        app:tint="#757575" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -70,70 +62,5 @@
                 android:src="@android:drawable/ic_menu_close_clear_cancel"
                 app:tint="#1A1A1A" />
         </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Search in:"
-                android:textColor="#9E9E9E"
-                android:textSize="14sp" />
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/btnSearchMyProjects"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                app:cardBackgroundColor="#F5F5F5"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="0dp">
-
-                <TextView
-                    android:id="@+id/tvSearchMyProjects"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="8dp"
-                    android:text="My Projects"
-                    android:textColor="#1A1A1A"
-                    android:textSize="12sp"
-                    android:textStyle="bold" />
-            </com.google.android.material.card.MaterialCardView>
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/btnSearchDiscover"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                app:cardBackgroundColor="#7C4DFF"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="0dp">
-
-                <TextView
-                    android:id="@+id/tvSearchDiscover"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="8dp"
-                    android:text="Discover"
-                    android:textColor="@color/white"
-                    android:textSize="12sp"
-                    android:textStyle="bold" />
-            </com.google.android.material.card.MaterialCardView>
-        </LinearLayout>
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/rvSearchResults"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:maxHeight="400dp" />
-
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

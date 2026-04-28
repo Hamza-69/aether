@@ -27,7 +27,7 @@
                 android:scaleType="centerCrop"
                 android:src="@android:drawable/ic_menu_gallery" />
 
-            <!-- Gradient overlay for premium feel -->
+            <!-- Gradient overlay -->
             <View
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
@@ -55,6 +55,53 @@
                     android:textSize="12sp"
                     android:fontFamily="sans-serif-black"
                     tools:text="Published" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Modern Author Overlay -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/authorContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|start"
+                android:layout_margin="16dp"
+                app:cardBackgroundColor="#CCFFFFFF"
+                app:cardCornerRadius="20dp"
+                app:cardElevation="0dp"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingEnd="12dp">
+
+                    <com.google.android.material.card.MaterialCardView
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        app:cardCornerRadius="16dp"
+                        app:cardElevation="0dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="@color/white">
+                        <ImageView
+                            android:id="@+id/ivAuthorAvatar"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:scaleType="centerCrop"
+                            android:src="@drawable/ic_profile" />
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <TextView
+                        android:id="@+id/tvAuthorName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="Alex Thompson"
+                        android:textColor="@color/text_main"
+                        android:textSize="12sp" />
+                </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </FrameLayout>
 

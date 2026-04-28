@@ -37,7 +37,7 @@ public class ProfileActivity extends AppCompatActivity {
         MaterialCardView btnLogout = findViewById(R.id.btnLogout);
         if (btnLogout != null) {
             btnLogout.setOnClickListener(v -> {
-                Intent intent = new Intent(ProfileActivity.this, SigninActivity.class);
+                Intent intent = new Intent(ProfileActivity.this, MainActivity.class);
                 intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
                 startActivity(intent);
                 finish();

@@ -14,7 +14,6 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.card.MaterialCardView;
@@ -55,6 +54,7 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
             intent.putExtra("PROJECT_TITLE", project.getTitle());
             intent.putExtra("PROJECT_DESC", project.getDescription());
             intent.putExtra("PROJECT_STATUS", project.getStatus());
+            intent.putExtra("PROJECT_INDEX", HomeActivity.userProjects.indexOf(project));
             v.getContext().startActivity(intent);
         });
 
@@ -108,6 +108,10 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
             tvPublishText.setText("Unpublish");
             ivPublishIcon.setImageResource(R.drawable.ic_back);
             ivPublishIcon.setImageTintList(android.content.res.ColorStateList.valueOf(Color.GRAY));
+            
+            if (project.hasUnpublishedChanges()) {
+                optUpdate.setVisibility(View.VISIBLE);
+            }
         } else {
             tvPublishText.setText("Publish");
             ivPublishIcon.setImageResource(R.drawable.ic_sparkle);
@@ -126,21 +130,19 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
 
         optPublish.setOnClickListener(view -> {
             if (isPublished) {
-                project.setStatus("Not Published");
-                showInfoSnackbar(v, "Project unpublished");
+                unpublishProject(project);
+                showInfoSnackbar(v, "Project unpublished and removed from Discover");
             } else {
-                project.setStatus("Published");
-                showSuccessSnackbar(v, "Project published successfully!");
+                dialog.dismiss();
+                showPublishCategoryDialog(v.getContext(), project, position, v, false);
             }
             notifyItemChanged(position);
             dialog.dismiss();
         });
 
         optUpdate.setOnClickListener(view -> {
-            project.setStatus("Published");
-            notifyItemChanged(position);
-            showSuccessSnackbar(v, "Project updated and published!");
             dialog.dismiss();
+            showPublishCategoryDialog(v.getContext(), project, position, v, true);
         });
 
         optExport.setOnClickListener(view -> {
@@ -150,10 +152,73 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
 
         optDelete.setOnClickListener(view -> {
             dialog.dismiss();
-            showCustomDeleteDialog(v.getContext(), position, v);
+            showCustomDeleteDialog(v.getContext(), project, position, v);
         });
 
         dialog.show();
+    }
+
+    private void unpublishProject(Project project) {
+        project.setStatus("Not Published");
+        project.setHasUnpublishedChanges(false);
+        for (int i = 0; i < HomeActivity.communityProjects.size(); i++) {
+            if (HomeActivity.communityProjects.get(i).getId() == project.getId()) {
+                HomeActivity.communityProjects.remove(i);
+                break;
+            }
+        }
+    }
+
+    private void showPublishCategoryDialog(android.content.Context context, Project project, int position, View view, boolean isUpdate) {
+        final Dialog dialog = new Dialog(context);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(R.layout.dialog_publish_type);
+
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+
+        MaterialCardView btnProject = dialog.findViewById(R.id.btnTypeProject);
+        MaterialCardView btnTemplate = dialog.findViewById(R.id.btnTypeTemplate);
+        Button btnCancel = dialog.findViewById(R.id.btnCancelPublish);
+
+        btnProject.setOnClickListener(v -> {
+            handlePublishAction(project, position, view, isUpdate, "Project");
+            dialog.dismiss();
+        });
+
+        btnTemplate.setOnClickListener(v -> {
+            handlePublishAction(project, position, view, isUpdate, "Template");
+            dialog.dismiss();
+        });
+
+        btnCancel.setOnClickListener(v -> dialog.dismiss());
+
+        dialog.show();
+    }
+
+    private void handlePublishAction(Project project, int position, View view, boolean isUpdate, String category) {
+        project.setStatus("Published");
+        project.setType(category);
+        project.setHasUnpublishedChanges(false);
+        
+        boolean foundInCommunity = false;
+        for (Project p : HomeActivity.communityProjects) {
+            if (p.getId() == project.getId()) {
+                p.setTitle(project.getTitle());
+                p.setType(category);
+                foundInCommunity = true;
+                break;
+            }
+        }
+        
+        if (!foundInCommunity) {
+            HomeActivity.communityProjects.add(0, new Project(project));
+        }
+        
+        notifyItemChanged(position);
+        showSuccessSnackbar(view, isUpdate ? "Project updated in Discover!" : "Project published successfully!");
     }
 
     private void showRenameDialog(android.content.Context context, Project project, int position, View view) {
@@ -166,7 +231,6 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
             dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         }
 
-        // Corrected IDs based on dialog_create_project.xml
         TextView tvTitle = dialog.findViewById(R.id.tvTitle);
         if (tvTitle != null) tvTitle.setText("Rename Project");
         
@@ -178,7 +242,6 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         View tvSuggestions = dialog.findViewById(R.id.tvSuggestions);
         View chipGroup = dialog.findViewById(R.id.chipGroupSuggestions);
         
-        // Hide description and suggestions for rename mode
         if (etDesc != null) ((View)etDesc.getParent()).setVisibility(View.GONE);
         if (tvSuggestions != null) tvSuggestions.setVisibility(View.GONE);
         if (chipGroup != null) chipGroup.setVisibility(View.GONE);
@@ -190,13 +253,15 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         if (btnSave != null) {
             btnSave.setText("Save Changes");
             btnSave.setEnabled(true);
-            btnSave.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#00B0FF")));
             btnSave.setOnClickListener(v -> {
                 String newName = etName.getText().toString().trim();
                 if (!newName.isEmpty()) {
                     project.setTitle(newName);
+                    if ("Published".equalsIgnoreCase(project.getStatus())) {
+                        project.setHasUnpublishedChanges(true);
+                    }
                     notifyItemChanged(position);
-                    showSuccessSnackbar(view, "Project renamed successfully");
+                    showSuccessSnackbar(view, "Name changed. Update in Discover to sync.");
                     dialog.dismiss();
                 }
             });
@@ -224,7 +289,7 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         snackbar.show();
     }
 
-    private void showCustomDeleteDialog(android.content.Context context, int position, View view) {
+    private void showCustomDeleteDialog(android.content.Context context, Project project, int position, View view) {
         final Dialog dialog = new Dialog(context);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setContentView(R.layout.dialog_confirm_delete);
@@ -238,6 +303,12 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         Button btnCancel = dialog.findViewById(R.id.btnCancelDelete);
 
         btnDelete.setOnClickListener(v -> {
+            for (int i = 0; i < HomeActivity.communityProjects.size(); i++) {
+                if (HomeActivity.communityProjects.get(i).getId() == project.getId()) {
+                    HomeActivity.communityProjects.remove(i);
+                    break;
+                }
+            }
             projects.remove(position);
             notifyItemRemoved(position);
             notifyItemRangeChanged(position, projects.size());

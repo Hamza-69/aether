@@ -37,7 +37,8 @@ public class ChatActivity extends AppCompatActivity {
     private String projectTitle;
     private String projectDesc;
     private String projectStatus;
-    private boolean hasUnpublishedChanges = false;
+    private Project currentProject;
+    private int projectIndex = -1;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,7 +48,12 @@ public class ChatActivity extends AppCompatActivity {
         projectTitle = getIntent().getStringExtra("PROJECT_TITLE");
         projectDesc = getIntent().getStringExtra("PROJECT_DESC");
         projectStatus = getIntent().getStringExtra("PROJECT_STATUS");
+        projectIndex = getIntent().getIntExtra("PROJECT_INDEX", -1);
         
+        if (projectIndex != -1 && projectIndex < HomeActivity.userProjects.size()) {
+            currentProject = HomeActivity.userProjects.get(projectIndex);
+        }
+
         if (projectTitle == null) projectTitle = "New Project";
         if (projectStatus == null) projectStatus = "Not Published";
 
@@ -112,6 +118,10 @@ public class ChatActivity extends AppCompatActivity {
         } else {
             statusBadge.setCardBackgroundColor(0xFFFFB300); // Orange
         }
+        
+        if (currentProject != null) {
+            currentProject.setStatus(projectStatus);
+        }
     }
 
     private void showEnhancedOptionsMenu(View v) {
@@ -123,20 +133,19 @@ public class ChatActivity extends AppCompatActivity {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             dialog.getWindow().setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             
-            // Positioning it near the top right button
             Window window = dialog.getWindow();
             window.setGravity(Gravity.TOP | Gravity.END);
             
-            // Add some offset from the top/right
             android.view.WindowManager.LayoutParams params = window.getAttributes();
-            params.x = 20; // pixels from right
-            params.y = 120; // pixels from top
+            params.x = 20; 
+            params.y = 120; 
             window.setAttributes(params);
             
             window.setWindowAnimations(android.R.style.Animation_Dialog);
         }
 
         LinearLayout optDeploy = dialog.findViewById(R.id.optionDeploy);
+        LinearLayout optRename = dialog.findViewById(R.id.optionRename);
         LinearLayout optPublish = dialog.findViewById(R.id.optionPublish);
         LinearLayout optUpdate = dialog.findViewById(R.id.optionUpdate);
         LinearLayout optExport = dialog.findViewById(R.id.optionExport);
@@ -152,7 +161,7 @@ public class ChatActivity extends AppCompatActivity {
             ivPublishIcon.setImageResource(R.drawable.ic_back);
             ivPublishIcon.setImageTintList(android.content.res.ColorStateList.valueOf(Color.GRAY));
             
-            if (hasUnpublishedChanges) {
+            if (currentProject != null && currentProject.hasUnpublishedChanges()) {
                 optUpdate.setVisibility(View.VISIBLE);
             }
         } else {
@@ -167,25 +176,24 @@ public class ChatActivity extends AppCompatActivity {
             dialog.dismiss();
         });
 
+        optRename.setOnClickListener(view -> {
+            dialog.dismiss();
+            showRenameDialog();
+        });
+
         optPublish.setOnClickListener(view -> {
             if (isPublished) {
-                projectStatus = "Not Published";
-                showInfoSnackbar("Project unpublished");
+                unpublishProject();
+                dialog.dismiss();
             } else {
-                projectStatus = "Published";
-                hasUnpublishedChanges = false;
-                showSuccessSnackbar("Project published successfully!");
+                dialog.dismiss();
+                showPublishCategoryDialog(false);
             }
-            updateStatusUI();
-            dialog.dismiss();
         });
 
         optUpdate.setOnClickListener(view -> {
-            projectStatus = "Published";
-            hasUnpublishedChanges = false;
-            updateStatusUI();
-            showSuccessSnackbar("Project updated and published!");
             dialog.dismiss();
+            showPublishCategoryDialog(true);
         });
 
         optExport.setOnClickListener(view -> {
@@ -199,6 +207,143 @@ public class ChatActivity extends AppCompatActivity {
         });
 
         dialog.show();
+    }
+
+    private void showRenameDialog() {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(R.layout.dialog_create_project);
+
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+
+        TextView tvTitle = dialog.findViewById(R.id.tvTitle);
+        if (tvTitle != null) tvTitle.setText("Rename Project");
+        
+        TextView tvSubtitle = dialog.findViewById(R.id.tvSubtitle);
+        if (tvSubtitle != null) tvSubtitle.setText("Update your project's name");
+
+        EditText etName = dialog.findViewById(R.id.etProjectName);
+        EditText etDesc = dialog.findViewById(R.id.etProjectDesc);
+        View tvSuggestions = dialog.findViewById(R.id.tvSuggestions);
+        View chipGroup = dialog.findViewById(R.id.chipGroupSuggestions);
+        
+        if (etDesc != null) ((View)etDesc.getParent()).setVisibility(View.GONE);
+        if (tvSuggestions != null) tvSuggestions.setVisibility(View.GONE);
+        if (chipGroup != null) chipGroup.setVisibility(View.GONE);
+
+        etName.setText(projectTitle);
+        etName.setSelection(etName.getText().length());
+
+        Button btnSave = dialog.findViewById(R.id.btnCreate);
+        if (btnSave != null) {
+            btnSave.setText("Save Changes");
+            btnSave.setEnabled(true);
+            btnSave.setOnClickListener(v -> {
+                String newName = etName.getText().toString().trim();
+                if (!newName.isEmpty()) {
+                    projectTitle = newName;
+                    TextView tvHeaderTitle = findViewById(R.id.tvChatTitle);
+                    tvHeaderTitle.setText(projectTitle);
+                    
+                    if (currentProject != null) {
+                        currentProject.setTitle(projectTitle);
+                        if ("Published".equalsIgnoreCase(projectStatus)) {
+                            currentProject.setHasUnpublishedChanges(true);
+                        }
+                    }
+                    
+                    showSuccessSnackbar("Project name changed locally. Click 'Update & Publish' to sync with Discover.");
+                    dialog.dismiss();
+                }
+            });
+        }
+
+        Button btnCancel = dialog.findViewById(R.id.btnCancel);
+        if (btnCancel != null) btnCancel.setOnClickListener(v -> dialog.dismiss());
+
+        dialog.show();
+    }
+
+    private void unpublishProject() {
+        projectStatus = "Not Published";
+        updateStatusUI();
+        
+        if (currentProject != null) {
+            currentProject.setHasUnpublishedChanges(false);
+            for (int i = 0; i < HomeActivity.communityProjects.size(); i++) {
+                if (HomeActivity.communityProjects.get(i).getId() == currentProject.getId()) {
+                    HomeActivity.communityProjects.remove(i);
+                    break;
+                }
+            }
+        }
+        
+        showInfoSnackbar("Project unpublished and removed from Discover");
+    }
+
+    private void showPublishCategoryDialog(boolean isUpdate) {
+        final Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(R.layout.dialog_publish_type);
+
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            dialog.getWindow().setGravity(Gravity.CENTER);
+        }
+
+        MaterialCardView btnProject = dialog.findViewById(R.id.btnTypeProject);
+        MaterialCardView btnTemplate = dialog.findViewById(R.id.btnTypeTemplate);
+        Button btnCancel = dialog.findViewById(R.id.btnCancelPublish);
+
+        btnProject.setOnClickListener(v -> {
+            handlePublishAction(isUpdate, "Project");
+            dialog.dismiss();
+        });
+
+        btnTemplate.setOnClickListener(v -> {
+            handlePublishAction(isUpdate, "Template");
+            dialog.dismiss();
+        });
+
+        btnCancel.setOnClickListener(v -> dialog.dismiss());
+
+        dialog.show();
+    }
+
+    private void handlePublishAction(boolean isUpdate, String category) {
+        projectStatus = "Published";
+        updateStatusUI();
+        
+        if (currentProject != null) {
+            currentProject.setType(category);
+            currentProject.setStatus("Published");
+            currentProject.setHasUnpublishedChanges(false);
+            
+            // Sync with Discover
+            boolean foundInCommunity = false;
+            for (Project p : HomeActivity.communityProjects) {
+                if (p.getId() == currentProject.getId()) {
+                    p.setTitle(projectTitle);
+                    p.setType(category);
+                    foundInCommunity = true;
+                    break;
+                }
+            }
+            
+            if (!foundInCommunity) {
+                // Add a COPY to community projects
+                Project communityProj = new Project(currentProject);
+                communityProj.setTitle(projectTitle); 
+                HomeActivity.communityProjects.add(0, communityProj);
+            }
+        }
+        
+        String message = isUpdate ? "Project updated and published to Discover!" : "Project published successfully to Discover!";
+        showSuccessSnackbar(message);
     }
 
     private void showSuccessSnackbar(String message) {
@@ -233,6 +378,16 @@ public class ChatActivity extends AppCompatActivity {
         Button btnCancel = dialog.findViewById(R.id.btnCancelDelete);
 
         btnDelete.setOnClickListener(v -> {
+            if (currentProject != null) {
+                for (int i = 0; i < HomeActivity.communityProjects.size(); i++) {
+                    if (HomeActivity.communityProjects.get(i).getId() == currentProject.getId()) {
+                        HomeActivity.communityProjects.remove(i);
+                        break;
+                    }
+                }
+                HomeActivity.userProjects.remove(currentProject);
+            }
+            
             showInfoSnackbar("Project deleted");
             dialog.dismiss();
             findViewById(android.R.id.content).postDelayed(this::finish, 1000);
@@ -278,7 +433,9 @@ public class ChatActivity extends AppCompatActivity {
             messageList.add(new ChatMessage(response, false));
             adapter.notifyItemInserted(messageList.size() - 1);
             rvChat.scrollToPosition(messageList.size() - 1);
-            hasUnpublishedChanges = true;
+            if (currentProject != null && "Published".equalsIgnoreCase(projectStatus)) {
+                currentProject.setHasUnpublishedChanges(true);
+            }
         }, 1200);
     }
 }
