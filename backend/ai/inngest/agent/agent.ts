@@ -15,10 +15,12 @@ import {
   readFilesTool,
   terminalTool,
 } from "./tools"
+
 export interface AgentState {
   summary: string
   error: string
   SandboxId: string
+  publishCallback: Function
 }
 
 export const tools = [

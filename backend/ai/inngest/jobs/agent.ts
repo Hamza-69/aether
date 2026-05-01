@@ -17,7 +17,7 @@ import { resolveBackendSecretsFromExample, stringifyEnv } from "../../../lib/pro
 export const codeAgentFunction = inngest.createFunction(
   {id: "code-agent"},
   { event: "code-agent/run" },
-  async ({ event, step }) => {
+  async ({ event, step, publish }: { event: any, step: any, publish: Function }) => {
 
     // Find the latest fragment with tar keys from a previous agent run on this project
     const latestFragment = await step.run("get-latest-fragment", async () => {
@@ -72,6 +72,7 @@ export const codeAgentFunction = inngest.createFunction(
       summary: "",
       error: "",
       SandboxId,
+      publishCallback: publish
     })
 
     const network = createNetwork<AgentState>({

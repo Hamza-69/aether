@@ -7,7 +7,7 @@ import { resolveBackendSecretsFromExample, stringifyEnv } from "../../../lib/pro
 export const previewProjectFunction = inngest.createFunction(
   { id: "preview-project" },
   { event: "preview-project/run" },
-  async ({ event, step }) => {
+  async ({ event, step, publish }: { event: any, step: any, publish: Function }) => {
     const { projectId, sandboxId } = event.data as { projectId: string; sandboxId: string }
 
     const fragment = await step.run("get-latest-fragment", async () => {

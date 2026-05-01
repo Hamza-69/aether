@@ -84,7 +84,7 @@ export const exportApkFunction = inngest.createFunction(
     concurrency: [{ key: "event.data.projectId", limit: 1 }],
   },
   { event: "export-apk/run" },
-  async ({ event, step }) => {
+  async ({ event, step, publish }: { event: any, step: any, publish: Function }) => {
     const { projectId } = event.data as { projectId: string }
 
     await step.run("mark-apk-running", async () => {

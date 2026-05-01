@@ -62,7 +62,7 @@ export const generateKeystoreFunction = inngest.createFunction(
     concurrency: [{ key: "event.data.projectId", limit: 1 }],
   },
   { event: "generate-keystore/run" },
-  async ({ event, step }) => {
+  async ({ event, step, publish }: { event: any, step: any, publish: Function }) => {
     const { projectId, subjectOverrides } = event.data as {
       projectId: string
       subjectOverrides?: KeystoreSubjectOverrides
