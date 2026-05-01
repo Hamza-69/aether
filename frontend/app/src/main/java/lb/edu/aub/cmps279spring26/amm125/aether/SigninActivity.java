@@ -11,13 +11,22 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
+
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.lifecycle.ViewModelProvider;
+
+import lb.edu.aub.cmps279spring26.amm125.aether.utils.SessionManager;
+import lb.edu.aub.cmps279spring26.amm125.aether.viewmodel.AuthViewModel;
 
 public class SigninActivity extends AppCompatActivity {
 
     private EditText etEmail, etPassword;
     private ImageView ivShowPassword;
     private boolean isPasswordVisible = false;
+
+    private AuthViewModel authViewModel;
+    private SessionManager sessionManager;
+    private Button btnSignIn;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -28,8 +37,11 @@ public class SigninActivity extends AppCompatActivity {
         etPassword = findViewById(R.id.etPassword);
         ivShowPassword = findViewById(R.id.ivShowPassword);
         ImageButton btnBack = findViewById(R.id.btnBack);
-        Button btnSignIn = findViewById(R.id.btnSignIn);
+        btnSignIn = findViewById(R.id.btnSignIn);
         TextView tvSignUp = findViewById(R.id.tvSignUp);
+
+        authViewModel = new ViewModelProvider(this).get(AuthViewModel.class);
+        sessionManager = new SessionManager(this);
 
         btnBack.setOnClickListener(v -> onBackPressed());
 
@@ -54,16 +66,42 @@ public class SigninActivity extends AppCompatActivity {
                 etEmail.setError("Email is required");
                 return;
             }
+
             if (TextUtils.isEmpty(password)) {
                 etPassword.setError("Password is required");
                 return;
             }
 
-            // Success: Go to Home
-            Intent intent = new Intent(SigninActivity.this, HomeActivity.class);
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-            startActivity(intent);
-            finish();
+            authViewModel.signin(email, password);
+        });
+
+        authViewModel.getLoading().observe(this, isLoading -> {
+            if (isLoading != null && isLoading) {
+                btnSignIn.setEnabled(false);
+                btnSignIn.setText("Signing in...");
+            } else {
+                btnSignIn.setEnabled(true);
+                btnSignIn.setText("Sign In");
+            }
+        });
+
+        authViewModel.getAuthSuccess().observe(this, authResponse -> {
+            if (authResponse != null && authResponse.getUser() != null) {
+                sessionManager.saveSession(authResponse.getToken(), authResponse.getUser());
+
+                Toast.makeText(SigninActivity.this, "Signin successful", Toast.LENGTH_SHORT).show();
+
+                Intent intent = new Intent(SigninActivity.this, HomeActivity.class);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                startActivity(intent);
+                finish();
+            }
+        });
+
+        authViewModel.getAuthError().observe(this, error -> {
+            if (error != null) {
+                Toast.makeText(SigninActivity.this, error, Toast.LENGTH_LONG).show();
+            }
         });
 
         tvSignUp.setOnClickListener(v -> {
