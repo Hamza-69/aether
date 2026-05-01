@@ -1,6 +1,9 @@
 package lb.edu.aub.cmps279spring26.amm125.aether;
 
+import android.content.Context;
 import android.net.Uri;
+
+import lb.edu.aub.cmps279spring26.amm125.aether.utils.SessionManager;
 
 public class UserManager {
     private static UserManager instance;
@@ -15,6 +18,20 @@ public class UserManager {
             instance = new UserManager();
         }
         return instance;
+    }
+
+    public void load(Context context) {
+        SessionManager sessionManager = new SessionManager(context);
+        this.name = sessionManager.getName();
+        this.email = sessionManager.getEmail();
+    }
+
+    public void logout(Context context) {
+        SessionManager sessionManager = new SessionManager(context);
+        sessionManager.logout();
+        this.name = null;
+        this.email = null;
+        this.profileImageUri = null;
     }
 
     public String getName() { return name; }
