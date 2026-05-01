@@ -4,8 +4,8 @@ import { inngest } from "../client"
 import { getSandbox } from "../../../lib/utils"
 import { FRAGMENT_TITLE_PROMPT } from "../prompts"
 import { prisma } from "../../../lib/prisma"
-import { codeAgent } from "../agents/agent"
-import { AgentState } from "../agents/agent"
+import { codeAgent } from "../agent/agent"
+import { AgentState } from "../agent/agent"
 import {
   uploadState,
   getStateDownloadUrl,
