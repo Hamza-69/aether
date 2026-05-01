@@ -92,6 +92,7 @@ export const grepTool = createTool({
     " - 'count': returns number of matches per file.",
   ].join("\n"),
   parameters: z.object({
+    explanation: z.string().describe("This is a mandatory field explaining specifically why this tool is being invoked and how it addresses the user's request. Mention the toolname in the explanation. Don't mention it as a step in the workflow, this is a reason for invoking this very specific tool. The input to this tool should be in a casual chat like way."),
     directory: z.string().describe("Absolute path to search"),
     pattern: z.string().describe("Extended-regex pattern, or a literal string if fixedStrings=true"),
     include: z.string().nullable().describe("Glob pattern to filter files (e.g., '*.ts', '*.tsx'). Pass null to search all files."),
@@ -149,6 +150,7 @@ export const globTool = createTool({
   // Updated description to explicitly guide the LLM away from breaking patterns
   description: "Find files matching a filename pattern. Do NOT use brace expansion like '*.{ts,tsx}'. Keep it simple: '*.ts' or '**/*.ts'",
   parameters: z.object({
+    explanation: z.string().describe("This is a mandatory field explaining specifically why this tool is being invoked and how it addresses the user's request. Mention the toolname in the explanation. Don't mention it as a step in the workflow, this is a reason for invoking this very specific tool. The input to this tool should be in a casual chat like way."),
     directory: z
       .string()
       .describe("Root directory to search (e.g. /home/user/backend or /home/user/frontend)"),
@@ -316,6 +318,7 @@ export const editFileTool = createTool({
     "with compiler output on failure.",
   ].join("\n"),
   parameters: z.object({
+    explanation: z.string().describe("This is a mandatory field explaining specifically why this tool is being invoked and how it addresses the user's request. Mention the toolname in the explanation. Don't mention it as a step in the workflow, this is a reason for invoking this very specific tool. The input to this tool should be in a casual chat like way."),
     filePath: z
       .string()
       .describe("Absolute path in the sandbox (/home/user/backend/... or /home/user/frontend/...)."),
@@ -398,6 +401,7 @@ export const createFileTool = createTool({
     "with compiler output on failure.",
   ].join("\n"),
   parameters: z.object({
+    explanation: z.string().describe("This is a mandatory field explaining specifically why this tool is being invoked and how it addresses the user's request. Mention the toolname in the explanation. Don't mention it as a step in the workflow, this is a reason for invoking this very specific tool. The input to this tool should be in a casual chat like way."),
     filePath: z
       .string()
       .describe("Absolute path in the sandbox (/home/user/backend/... or /home/user/frontend/...)."),
@@ -448,6 +452,7 @@ export const deleteFileTool = createTool({
   name: "deleteFile",
   description: "Delete a file from the sandbox. No type-check runs after deletion.",
   parameters: z.object({
+    explanation: z.string().describe("This is a mandatory field explaining specifically why this tool is being invoked and how it addresses the user's request. Mention the toolname in the explanation. Don't mention it as a step in the workflow, this is a reason for invoking this very specific tool. The input to this tool should be in a casual chat like way."),
     filePath: z
       .string()
       .describe("Absolute path in the sandbox."),
@@ -473,6 +478,7 @@ export const webSearchTool = createTool({
   description:
     "Search the web via DuckDuckGo and return the top 5 result URLs and snippets.",
   parameters: z.object({
+    explanation: z.string().describe("This is a mandatory field explaining specifically why this tool is being invoked and how it addresses the user's request. Mention the toolname in the explanation. Don't mention it as a step in the workflow, this is a reason for invoking this very specific tool. The input to this tool should be in a casual chat like way."),
     query: z.string().describe("Search query"),
   }),
   handler: async ({ query }, { step }) => {
@@ -518,6 +524,7 @@ export const webFetchTool = createTool({
   description:
     "Fetch a URL and return its readable text content (scripts/styles stripped, truncated to 10 000 chars).",
   parameters: z.object({
+    explanation: z.string().describe("This is a mandatory field explaining specifically why this tool is being invoked and how it addresses the user's request. Mention the toolname in the explanation. Don't mention it as a step in the workflow, this is a reason for invoking this very specific tool. The input to this tool should be in a casual chat like way."),
     url: z.string().describe("URL to fetch"),
   }),
   handler: async ({ url }, { step }) => {
@@ -550,6 +557,7 @@ export const ragQueryTool = createTool({
   description:
     "Semantic search over the embedded Expo and/or NativeWind documentation. Prefer this over webSearch for React Native / Expo / NativeWind questions.",
   parameters: z.object({
+    explanation: z.string().describe("This is a mandatory field explaining specifically why this tool is being invoked and how it addresses the user's request. Mention the toolname in the explanation. Don't mention it as a step in the workflow, this is a reason for invoking this very specific tool. The input to this tool should be in a casual chat like way."),
     query: z
       .string()
       .describe("Natural-language question or description of what you need"),
@@ -607,6 +615,7 @@ export const terminalTool = createTool({
   name: "terminal",
   description: "Run a shell command in the sandbox. Returns stdout, stderr, and the exit code.",
   parameters: z.object({
+    explanation: z.string().describe("This is a mandatory field explaining specifically why this tool is being invoked and how it addresses the user's request. Mention the toolname in the explanation. Don't mention it as a step in the workflow, this is a reason for invoking this very specific tool. The input to this tool should be in a casual chat like way."),
     command: z.string(),
   }),
   handler: async ({ command }, { step, network }) => {
@@ -639,6 +648,7 @@ export const readFilesTool = createTool({
   name: "readFiles",
   description: "Read files from sandbox.",
   parameters: z.object({
+    explanation: z.string().describe("This is a mandatory field explaining specifically why this tool is being invoked and how it addresses the user's request. Mention the toolname in the explanation. Don't mention it as a step in the workflow, this is a reason for invoking this very specific tool. The input to this tool should be in a casual chat like way."),
     files: z.array(z.string()),
   }),
   handler: async ({files}, {step, network}) => {
