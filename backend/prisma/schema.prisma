@@ -7,6 +7,17 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  projects  Project[]
+}
+
 enum MessageRole {
   USER
   ASSISTANT
@@ -60,6 +71,9 @@ model Project {
   name       String
   createdAt  DateTime    @default(now()) @db.Timestamptz(3)
   updatedAt  DateTime    @updatedAt @db.Timestamptz(3)
+
+   userId String?
+  user   User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   previewUrl       String?
   previewStatus    PreviewStatus @default(IDLE)
