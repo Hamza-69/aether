@@ -56,10 +56,10 @@ model NativeWindDocs {
 }
 
 model Project {
-  id         String      @id @default(cuid())
-  name       String
-  createdAt  DateTime    @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime    @updatedAt @db.Timestamptz(3)
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   previewUrl       String?
   previewStatus    PreviewStatus @default(IDLE)
@@ -79,6 +79,7 @@ model Project {
   keyStore    KeyStore?
   deployments Deployment[]
   secrets     Secret[]
+  stream      Stream?
 }
 
 model Secret {
@@ -99,37 +100,38 @@ model APK {
   url       String
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
-  
+
   // Required Back-relation
   projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stream    Stream?
 }
 
 model Message {
-  id         String    @id @default(cuid())
-  content    String
-  role       MessageRole
-  type       MessageType
-  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
-  
-  projectId  String
-  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id        String      @id @default(cuid())
+  content   String
+  role      MessageRole
+  type      MessageType
+  createdAt DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime    @updatedAt @db.Timestamptz(3)
 
-  fragmentId String?
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  fragmentId String?   @unique
   fragment   Fragment? @relation(fields: [fragmentId], references: [id])
+  stream     Stream?
 }
 
 model Fragment {
-  id              String   @id @default(cuid())
-  content         String
-  frontendTarKey  String?
-  backendTarKey   String?
-  createdAt       DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+  id             String   @id @default(cuid())
+  content        String
+  frontendTarKey String?
+  backendTarKey  String?
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
 
-  // Required Back-relation
-  messages  Message[]
+  message Message?
 }
 
 model KeyStore {
@@ -140,8 +142,9 @@ model KeyStore {
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   // Required Back-relation (1-to-1 requires @unique)
-  projectId String   @unique
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String  @unique
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stream    Stream?
 }
 
 model Deployment {
@@ -151,7 +154,44 @@ model Deployment {
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stream    Stream?
 
   @@index([projectId])
+}
+
+model Stream {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  // APK relation
+  apkId String? @unique
+  apk   APK?    @relation(fields: [apkId], references: [id], onDelete: Cascade)
+
+  // Deployment relation
+  deploymentId String?     @unique
+  deployment   Deployment? @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+
+  // Project relation (optional if you want direct access)
+  prejectId String?  @unique
+  project   Project? @relation(fields: [prejectId], references: [id], onDelete: Cascade)
+
+  keystoreId String?   @unique
+  keystore   KeyStore? @relation(fields: [keystoreId], references: [id], onDelete: Cascade)
+
+  messageId    String?       @unique
+  message      Message?      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  streamChunks StreamChunk[]
+}
+
+model StreamChunk {
+  id        String   @id @default(cuid())
+  data      Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  streamId String
+  stream   Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
 }

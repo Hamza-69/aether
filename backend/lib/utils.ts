@@ -1,5 +1,7 @@
 import { Sandbox } from "e2b"
 import { AgentResult, TextMessage } from "@inngest/agent-kit"
+import { prisma } from "./prisma"
+import { Prisma } from "../generated/prisma/client"
 
 export async function getSandbox(sandboxId: string) {
   const sandbox = await Sandbox.connect(sandboxId)
@@ -21,4 +23,19 @@ export function lastAssistantTextMessageContent(result: AgentResult) {
     ? message.content
     : message.content.map((c) => c.text).join("")
     : undefined
+}
+
+export async function publish(publishCallback: Function, channel: string, topic: string, data: Prisma.InputJsonValue, streamId: string) {
+  await publishCallback({
+    channel,
+    topic,
+    data,
+  })
+
+  await prisma.streamChunk.create({
+    data: {
+      streamId,
+      data
+    }
+  })
 }
