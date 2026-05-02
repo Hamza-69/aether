@@ -31,6 +31,16 @@ public class SigninActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        sessionManager = new SessionManager(this);
+        if (sessionManager.isLoggedIn() && sessionManager.getToken() != null) {
+            Intent intent = new Intent(SigninActivity.this, HomeActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            startActivity(intent);
+            finish();
+            return;
+        }
+
         setContentView(R.layout.activity_signin);
 
         etEmail = findViewById(R.id.etEmail);
@@ -41,7 +51,6 @@ public class SigninActivity extends AppCompatActivity {
         TextView tvSignUp = findViewById(R.id.tvSignUp);
 
         authViewModel = new ViewModelProvider(this).get(AuthViewModel.class);
-        sessionManager = new SessionManager(this);
 
         btnBack.setOnClickListener(v -> onBackPressed());
 

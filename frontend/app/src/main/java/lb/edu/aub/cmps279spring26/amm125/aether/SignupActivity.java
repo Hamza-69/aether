@@ -31,6 +31,16 @@ public class SignupActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        sessionManager = new SessionManager(this);
+        if (sessionManager.isLoggedIn() && sessionManager.getToken() != null) {
+            Intent intent = new Intent(SignupActivity.this, HomeActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            startActivity(intent);
+            finish();
+            return;
+        }
+
         setContentView(R.layout.activity_signup);
 
         etName = findViewById(R.id.etName);
@@ -43,7 +53,6 @@ public class SignupActivity extends AppCompatActivity {
         btnCreateAccount = findViewById(R.id.btnCreateAccount);
 
         authViewModel = new ViewModelProvider(this).get(AuthViewModel.class);
-        sessionManager = new SessionManager(this);
 
         btnBack.setOnClickListener(v -> onBackPressed());
 
