@@ -5,6 +5,8 @@ import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiService;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.AuthResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.LoginRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.SignupRequest;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.VerificationRequest;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.VerificationStartResponse;
 import retrofit2.Call;
 
 public class AuthRepository {
@@ -15,13 +17,23 @@ public class AuthRepository {
         apiService = ApiClient.getApiService();
     }
 
-    public Call<AuthResponse> signin(String email, String password) {
+    public Call<VerificationStartResponse> signin(String email, String password) {
         LoginRequest loginRequest = new LoginRequest(email, password);
         return apiService.signin(loginRequest);
     }
 
-    public Call<AuthResponse> signup(String name, String email, String password) {
+    public Call<VerificationStartResponse> signup(String name, String email, String password) {
         SignupRequest signupRequest = new SignupRequest(name, email, password);
         return apiService.signup(signupRequest);
+    }
+
+    public Call<AuthResponse> verifySignin(String challengeId, String code) {
+        VerificationRequest verificationRequest = new VerificationRequest(challengeId, code);
+        return apiService.verifySignin(verificationRequest);
+    }
+
+    public Call<AuthResponse> verifySignup(String challengeId, String code) {
+        VerificationRequest verificationRequest = new VerificationRequest(challengeId, code);
+        return apiService.verifySignup(verificationRequest);
     }
 }

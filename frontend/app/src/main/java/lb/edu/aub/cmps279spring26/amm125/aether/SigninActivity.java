@@ -3,6 +3,8 @@ package lb.edu.aub.cmps279spring26.amm125.aether;
 import android.content.Intent;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.view.LayoutInflater;
+import android.view.View;
 import android.text.method.HideReturnsTransformationMethod;
 import android.text.method.PasswordTransformationMethod;
 import android.widget.Button;
@@ -12,6 +14,7 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.lifecycle.ViewModelProvider;
 
@@ -27,6 +30,7 @@ public class SigninActivity extends AppCompatActivity {
     private AuthViewModel authViewModel;
     private SessionManager sessionManager;
     private Button btnSignIn;
+    private String pendingChallengeId;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -107,6 +111,13 @@ public class SigninActivity extends AppCompatActivity {
             }
         });
 
+        authViewModel.getVerificationStarted().observe(this, verificationStartResponse -> {
+            if (verificationStartResponse != null && !TextUtils.isEmpty(verificationStartResponse.getChallengeId())) {
+                pendingChallengeId = verificationStartResponse.getChallengeId();
+                showOtpDialog();
+            }
+        });
+
         authViewModel.getAuthError().observe(this, error -> {
             if (error != null) {
                 Toast.makeText(SigninActivity.this, error, Toast.LENGTH_LONG).show();
@@ -118,5 +129,30 @@ public class SigninActivity extends AppCompatActivity {
             startActivity(intent);
             finish();
         });
+    }
+
+    private void showOtpDialog() {
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_verification_code, null);
+        final EditText input = dialogView.findViewById(R.id.etOtpCode);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setView(dialogView)
+                .setCancelable(false)
+                .setPositiveButton("Verify", null)
+                .setNegativeButton("Cancel", (dialogInterface, which) -> dialogInterface.dismiss())
+                .create();
+
+        dialog.setOnShowListener(dialogInterface -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                    String code = input.getText().toString().trim();
+                    if (TextUtils.isEmpty(code) || code.length() != 6) {
+                        input.setError("Enter a valid 6-digit code");
+                        return;
+                    }
+                    input.setError(null);
+                    authViewModel.verifySignin(pendingChallengeId, code);
+                    dialog.dismiss();
+                }));
+
+        dialog.show();
     }
 }
