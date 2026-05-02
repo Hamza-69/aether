@@ -3,6 +3,7 @@ import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 import { prisma } from "../lib/prisma"
 import { sendEmail } from "../lib/email"
+import { requireAuth } from "../lib/auth"
 
 export const authRouter = express.Router()
 
@@ -299,6 +300,13 @@ authRouter.post("/signin/verify", async (req, res) => {
       })
     }
 
+    if (!challenge.userId) {
+      challenges.delete(challengeId)
+      return res.status(400).json({
+        message: "Invalid verification challenge",
+      })
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: challenge.userId },
     })
@@ -482,3 +490,31 @@ authRouter.post("/password/reset", async (req, res) => {
     })
   }
 })
+
+// GET CURRENT USER
+authRouter.get("/me", requireAuth, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        email: true,
+        createdAt: true,
+      },
+    })
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" })
+    }
+
+    return res.status(200).json({ user })
+  } catch (error) {
+    console.error("Get current user error:", error)
+    return res.status(500).json({
+      message: "Server error while fetching user",
+    })
+  }
+})
+

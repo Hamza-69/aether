@@ -10,10 +10,10 @@ async function publishExplanation(
   explanation: string,
 ) {
   const data = network?.state?.data
-  if (!data?.publishCallback || !data?.streamId || !data?.projectId) return
+  if (!data?.publishCallback || !data?.streamId || !data?.projectId || !data?.userId) return
   await publishFunction(
     data.publishCallback,
-    "project_code_agent:" + data.projectId,
+    "project_code_agent:" + data.userId + ":" + data.projectId,
     "ai",
     { tool: toolName, explanation },
     data.streamId,

@@ -9,7 +9,15 @@ export const previewProjectFunction = inngest.createFunction(
   { event: "preview-project/run" },
   async ({ event, step, publish }: { event: any, step: any, publish: Function }) => {
     const { projectId, sandboxId } = event.data as { projectId: string; sandboxId: string }
-    const channel = "project_preview:" + projectId
+
+    // Resolve the project owner so channels are scoped per user
+    const projectOwner = await step.run("resolve-project-owner", async () => {
+      return prisma.project.findUniqueOrThrow({
+        where: { id: projectId },
+        select: { userId: true },
+      })
+    })
+    const channel = "project_preview:" + projectOwner.userId + ":" + projectId
 
     const { previewId, streamId } = await step.run("create-incomplete-preview", async () => {
       // Previews are an array per project; the most recent one is the "live"

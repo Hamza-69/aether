@@ -22,6 +22,16 @@ import {
 
 const registry = new OpenAPIRegistry()
 
+// ── Security scheme ──────────────────────────────────────────────────────────
+registry.registerComponent("securitySchemes", "BearerAuth", {
+  type: "http",
+  scheme: "bearer",
+  bearerFormat: "JWT",
+})
+
+const protectedRoute = [{ BearerAuth: [] }]
+
+// ── Schema registration ─────────────────────────────────────────────────────
 registry.register("Project", ProjectSchema)
 registry.register("ProjectPreview", ProjectPreviewSchema)
 registry.register("Message", MessageSchema)
@@ -38,11 +48,50 @@ registry.register("KeyStoreSummary", KeyStoreSummarySchema)
 registry.register("GenerateKeystoreResponse", GenerateKeystoreResponseSchema)
 registry.register("GenerateKeystoreBody", GenerateKeystoreBodySchema)
 
+const UserSchema = z
+  .object({
+    id: z.string().openapi({ example: "clxyz123" }),
+    name: z.string().openapi({ example: "Jane Doe" }),
+    username: z.string().openapi({ example: "janedoe" }),
+    email: z.string().email().openapi({ example: "jane@example.com" }),
+    createdAt: z.string().datetime().openapi({ example: "2024-01-01T00:00:00Z" }),
+  })
+  .openapi("User")
+
+registry.register("User", UserSchema)
+
+// ── Auth routes (public) ────────────────────────────────────────────────────
+
+registry.registerPath({
+  method: "get",
+  path: "/api/auth/me",
+  tags: ["Auth"],
+  summary: "Get current authenticated user",
+  security: protectedRoute,
+  responses: {
+    200: {
+      description: "Current user",
+      content: {
+        "application/json": {
+          schema: z.object({ user: UserSchema }),
+        },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+// ── Projects ────────────────────────────────────────────────────────────────
+
 registry.registerPath({
   method: "get",
   path: "/api/projects",
   tags: ["Projects"],
-  summary: "List projects",
+  summary: "List projects owned by the authenticated user",
+  security: protectedRoute,
   responses: {
     200: {
       description: "Projects list",
@@ -51,6 +100,43 @@ registry.registerPath({
           schema: z.object({ projects: z.array(ProjectSchema) }),
         },
       },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "get",
+  path: "/api/projects/{projectId}",
+  tags: ["Projects"],
+  summary: "Get a single project by ID",
+  security: protectedRoute,
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+  },
+  responses: {
+    200: {
+      description: "Project details",
+      content: {
+        "application/json": {
+          schema: z.object({ project: ProjectSchema }),
+        },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Project not found or not owned by user",
+      content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
       description: "Internal server error",
@@ -64,6 +150,7 @@ registry.registerPath({
   path: "/api/projects",
   tags: ["Projects"],
   summary: "Create a new project",
+  security: protectedRoute,
   request: {
     body: {
       required: true,
@@ -83,6 +170,10 @@ registry.registerPath({
       description: "Bad request",
       content: { "application/json": { schema: ErrorSchema } },
     },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
     500: {
       description: "Internal server error",
       content: { "application/json": { schema: ErrorSchema } },
@@ -97,6 +188,7 @@ registry.registerPath({
   summary: "Start (or reuse) the sandbox preview for a project",
   description:
     "Returns the sandbox preview URL immediately. Behavior: if the project already has a live sandbox (RUNNING and under 20 min and responding), returns it with alreadyRunning=true. If a preview job is SCHEDULED and under 5 min old, returns the pending url with scheduled=true. Otherwise provisions a new e2b sandbox, persists its url, enqueues the preview-project/run Inngest job, and returns 202 with scheduled=true.",
+  security: protectedRoute,
   request: {
     params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
   },
@@ -117,6 +209,10 @@ registry.registerPath({
         },
       },
     },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
     404: {
       description: "Project or runnable fragment not found",
       content: { "application/json": { schema: ErrorSchema } },
@@ -128,11 +224,49 @@ registry.registerPath({
   },
 })
 
+// ── Messages ────────────────────────────────────────────────────────────────
+
+registry.registerPath({
+  method: "get",
+  path: "/api/projects/{projectId}/messages",
+  tags: ["Messages"],
+  summary: "List all messages for a project",
+  description:
+    "Returns all messages for the project in chronological order (oldest first). Each assistant message includes its linked fragment content.",
+  security: protectedRoute,
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+  },
+  responses: {
+    200: {
+      description: "Messages list",
+      content: {
+        "application/json": {
+          schema: z.object({ messages: z.array(MessageSchema) }),
+        },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Project not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
 registry.registerPath({
   method: "post",
-  path: "/api/messages/{projectId}",
+  path: "/api/projects/{projectId}/messages",
   tags: ["Messages"],
   summary: "Send a follow-up prompt to an existing project",
+  security: protectedRoute,
   request: {
     params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
     body: {
@@ -153,6 +287,10 @@ registry.registerPath({
       description: "Bad request",
       content: { "application/json": { schema: ErrorSchema } },
     },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
     404: {
       description: "Project not found",
       content: { "application/json": { schema: ErrorSchema } },
@@ -164,6 +302,8 @@ registry.registerPath({
   },
 })
 
+// ── Secrets ─────────────────────────────────────────────────────────────────
+
 registry.registerPath({
   method: "get",
   path: "/api/projects/{projectId}/secrets",
@@ -171,6 +311,7 @@ registry.registerPath({
   summary: "List secret names for a project",
   description:
     "Returns only names and updatedAt timestamps. Values are never returned by the API.",
+  security: protectedRoute,
   request: {
     params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
   },
@@ -182,6 +323,10 @@ registry.registerPath({
           schema: z.object({ secrets: z.array(SecretSummarySchema) }),
         },
       },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
     },
     404: {
       description: "Project not found",
@@ -201,6 +346,7 @@ registry.registerPath({
   summary: "Write or overwrite one or more project secrets",
   description:
     "Each encryptedValue is base64 of [IV(12) | AuthTag(16) | ciphertext] AES-256-GCM-encrypted with CLIENT_SECRET_KEY. The server decrypts with CLIENT_SECRET_KEY and re-encrypts at rest with ENCRYPTION_MASTER_KEY. Upserts by (projectId, name).",
+  security: protectedRoute,
   request: {
     params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
     body: {
@@ -221,6 +367,10 @@ registry.registerPath({
       description: "Invalid body or decryption failure",
       content: { "application/json": { schema: ErrorSchema } },
     },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
     404: {
       description: "Project not found",
       content: { "application/json": { schema: ErrorSchema } },
@@ -237,6 +387,7 @@ registry.registerPath({
   path: "/api/projects/{projectId}/secrets/{name}",
   tags: ["Secrets"],
   summary: "Delete a secret by name",
+  security: protectedRoute,
   request: {
     params: z.object({
       projectId: z.string().openapi({ example: "clxyz123" }),
@@ -245,6 +396,10 @@ registry.registerPath({
   },
   responses: {
     204: { description: "Deleted" },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
     404: {
       description: "Project or secret not found",
       content: { "application/json": { schema: ErrorSchema } },
@@ -256,13 +411,16 @@ registry.registerPath({
   },
 })
 
+// ── Deployments ─────────────────────────────────────────────────────────────
+
 registry.registerPath({
   method: "post",
   path: "/api/projects/{projectId}/deploy",
   tags: ["Deployments"],
   summary: "Deploy the project's latest backend fragment to Fly.io",
   description:
-    "Validates that the project has a FLY_API_TOKEN secret and a runnable fragment, then enqueues the deploy-project/run Inngest job. The job restores the latest backend tar in a sandbox, runs deploy.sh (which does `fly launch` on first deploy and `fly deploy` on redeploys), pushes the project's .env.example keys as Fly secrets, records a new Deployment row, and emits a new assistant message + fragment linking to the deployment URL. Returns 202 immediately; the deployment completes asynchronously.",
+    "Validates that the project has a FLY_API_TOKEN secret and a runnable fragment, then enqueues the deploy-project/run Inngest job. Returns 202 immediately; the deployment completes asynchronously.",
+  security: protectedRoute,
   request: {
     params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
   },
@@ -273,6 +431,10 @@ registry.registerPath({
     },
     400: {
       description: "FLY_API_TOKEN secret is not set for this project",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
       content: { "application/json": { schema: ErrorSchema } },
     },
     404: {
@@ -292,7 +454,8 @@ registry.registerPath({
   tags: ["Deployments"],
   summary: "List all deployments for a project (read-only)",
   description:
-    "Returns every deployment recorded for the project, newest first. Each deployment keeps its own URL so previous URLs remain resolvable if a later deployment changes the app hostname. Deployments are created only by the deploy-project background job; there is no PATCH/DELETE endpoint.",
+    "Returns every deployment recorded for the project, newest first.",
+  security: protectedRoute,
   request: {
     params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
   },
@@ -305,6 +468,10 @@ registry.registerPath({
         },
       },
     },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
     404: {
       description: "Project not found",
       content: { "application/json": { schema: ErrorSchema } },
@@ -316,6 +483,8 @@ registry.registerPath({
   },
 })
 
+// ── Keystore ────────────────────────────────────────────────────────────────
+
 registry.registerPath({
   method: "get",
   path: "/api/projects/{projectId}/keystore",
@@ -323,6 +492,7 @@ registry.registerPath({
   summary: "Get keystore status and presence for a project",
   description:
     "Returns whether a keystore has been generated for this project, plus the current keyStoreStatus lock. Keystore bytes and password are never returned by the API.",
+  security: protectedRoute,
   request: {
     params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
   },
@@ -330,6 +500,10 @@ registry.registerPath({
     200: {
       description: "Keystore summary",
       content: { "application/json": { schema: KeyStoreSummarySchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
     },
     404: {
       description: "Project not found",
@@ -348,7 +522,8 @@ registry.registerPath({
   tags: ["Keystore"],
   summary: "Generate and store a signing keystore for the project",
   description:
-    "Unique idempotency rules: (a) if a keystore already exists, returns 200 with alreadyExists=true and does NOT regenerate (regenerating would orphan previously-signed APKs). (b) if keyStoreStatus is SCHEDULED/RUNNING under the stale cutoff, returns 409. (c) otherwise atomically claims the IDLE→SCHEDULED lock and enqueues the generate-keystore/run Inngest job. You can optionally pass subject overrides in the request body. Missing subject fields are auto-derived from the project name (countryCode defaults to US). The job spins up a generate-keystore sandbox, generates a random base64 password via openssl, runs keytool to produce a PKCS12 release.keystore, and persists both (encrypted password + keystore bytes) in the KeyStore row for the project. Returns 202 when scheduled; generation completes asynchronously.",
+    "Unique idempotency rules: (a) if a keystore already exists, returns 200 with alreadyExists=true and does NOT regenerate. (b) if keyStoreStatus is SCHEDULED/RUNNING under the stale cutoff, returns 409. (c) otherwise atomically claims the IDLE→SCHEDULED lock and enqueues the generate-keystore/run Inngest job.",
+  security: protectedRoute,
   request: {
     params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
     body: {
@@ -369,6 +544,10 @@ registry.registerPath({
       description: "Invalid request body",
       content: { "application/json": { schema: ErrorSchema } },
     },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
     404: {
       description: "Project not found",
       content: { "application/json": { schema: ErrorSchema } },
@@ -384,13 +563,16 @@ registry.registerPath({
   },
 })
 
+// ── APK ─────────────────────────────────────────────────────────────────────
+
 registry.registerPath({
   method: "get",
   path: "/api/projects/{projectId}/apks",
   tags: ["APK"],
   summary: "List all exported APKs for a project (read-only)",
   description:
-    "Returns every APK exported for the project, newest first. Each APK row's `url` is the S3/Tigris object key under the project's bucket; resolve it to a download URL via the storage layer. APKs are created only by the export-apk background job.",
+    "Returns every APK exported for the project, newest first.",
+  security: protectedRoute,
   request: {
     params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
   },
@@ -402,6 +584,10 @@ registry.registerPath({
           schema: z.object({ apks: z.array(APKSchema) }),
         },
       },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
     },
     404: {
       description: "Project not found",
@@ -420,7 +606,8 @@ registry.registerPath({
   tags: ["APK"],
   summary: "Get a time-limited download URL for an exported APK",
   description:
-    "Returns a presigned S3/Tigris URL for the APK artifact that is valid for 1 hour. The client should use this URL directly to download the .apk file. After expiry, request a fresh URL from this endpoint.",
+    "Returns a presigned S3/Tigris URL for the APK artifact that is valid for 1 hour.",
+  security: protectedRoute,
   request: {
     params: z.object({
       projectId: z.string().openapi({ example: "clxyz123" }),
@@ -431,6 +618,10 @@ registry.registerPath({
     200: {
       description: "Presigned download URL (valid 1 hour)",
       content: { "application/json": { schema: ApkDownloadUrlSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
     },
     404: {
       description: "APK not found for this project",
@@ -449,7 +640,8 @@ registry.registerPath({
   tags: ["APK"],
   summary: "Export a signed Android APK for the project's frontend",
   description:
-    "Validates that the project has (a) a keystore generated via POST /api/projects/{projectId}/keystore, (b) an EXPO_TOKEN secret (Expo personal access token used to auth eas-cli), (c) at least one prior deployment (whose URL becomes EXPO_PUBLIC_API_URL in the APK's .env), and (d) a runnable frontend fragment. Then atomically claims the apkStatus IDLE→SCHEDULED lock and enqueues the export-apk/run Inngest job. The job restores the latest frontend tar in a lightweight eas-cli sandbox, writes .env with EXPO_PUBLIC_API_URL pointing to the latest deployment, writes the decrypted keystore bytes to my-upload-key.keystore in the frontend root, runs eas-build.sh (which writes credentials.json + eas.json for local-credentials signing, then invokes `eas build --platform android --profile production-apk --non-interactive --json` blocking). The resulting artifact URL is fetched from the EAS JSON output, the APK is downloaded and uploaded to S3, an APK row is recorded, and an assistant message is emitted. Returns 202 immediately; the export completes asynchronously.",
+    "Validates prerequisites (keystore, EXPO_TOKEN secret, prior deployment, runnable frontend fragment), then enqueues the export-apk/run Inngest job. Returns 202 immediately.",
+  security: protectedRoute,
   request: {
     params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
   },
@@ -463,6 +655,10 @@ registry.registerPath({
         "Keystore not generated, EXPO_TOKEN secret not set, or no deployment exists for this project",
       content: { "application/json": { schema: ErrorSchema } },
     },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
     404: {
       description: "Project or runnable frontend fragment not found",
       content: { "application/json": { schema: ErrorSchema } },
@@ -473,6 +669,57 @@ registry.registerPath({
     },
     500: {
       description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+// ── Realtime ────────────────────────────────────────────────────────────────
+
+registry.registerPath({
+  method: "post",
+  path: "/api/realtime",
+  tags: ["Realtime"],
+  summary: "Get a subscription token for a project's realtime stream",
+  description:
+    "Returns an Inngest realtime subscription token for the given project and stream type. The client uses this token to subscribe to live updates.",
+  security: protectedRoute,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z.object({
+            projectId: z.string().openapi({ example: "clxyz123" }),
+            type: z.enum(["code-agent", "deploy", "export-apk", "generate-keystore", "preview"]),
+          }).openapi("RealtimeSubscriptionRequest"),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Subscription token",
+      content: {
+        "application/json": {
+          schema: z.object({
+            token: z.any(),
+            channel: z.string(),
+            topic: z.string(),
+          }).openapi("RealtimeSubscriptionResponse"),
+        },
+      },
+    },
+    400: {
+      description: "Missing or invalid fields",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Project not found",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },

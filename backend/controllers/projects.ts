@@ -7,9 +7,12 @@ import { secretsRouter } from "./secrets"
 import { deploymentsRouter, deployProjectHandler } from "./deployments"
 import { keystoresRouter, generateKeystoreHandler } from "./keystores"
 import { apksRouter, exportApkHandler } from "./apks"
+import { messagesRouter } from "./messages"
+import { ensureProjectOwnership } from "../lib/ensureProjectOwnership"
 
 export const projectsRouter = Router()
 
+// Sub-routers (all inherit auth from the parent mount in app.ts)
 projectsRouter.use("/:projectId/secrets", secretsRouter)
 projectsRouter.use("/:projectId/deployments", deploymentsRouter)
 projectsRouter.post("/:projectId/deploy", deployProjectHandler)
@@ -17,6 +20,7 @@ projectsRouter.use("/:projectId/keystore", keystoresRouter)
 projectsRouter.post("/:projectId/keystore", generateKeystoreHandler)
 projectsRouter.use("/:projectId/apks", apksRouter)
 projectsRouter.post("/:projectId/export-apk", exportApkHandler)
+projectsRouter.use("/:projectId/messages", messagesRouter)
 
 const toKebabCase = (str: string) =>
   str
@@ -65,9 +69,11 @@ const startPreviewJob = async (projectId: string) => {
   return url
 }
 
-projectsRouter.get("/", async (_req, res) => {
+// GET /api/projects — list only the authenticated user's projects
+projectsRouter.get("/", async (req, res) => {
   try {
     const projects = await prisma.project.findMany({
+      where: { userId: req.user!.id },
       orderBy: { updatedAt: "desc" },
     })
     res.status(200).json({ projects })
@@ -77,6 +83,24 @@ projectsRouter.get("/", async (_req, res) => {
   }
 })
 
+// GET /api/projects/:projectId — fetch a single project
+projectsRouter.get("/:projectId", async (req, res) => {
+  const { projectId } = req.params as { projectId: string }
+
+  try {
+    const project = await ensureProjectOwnership(projectId, req.user!.id)
+    if (!project) {
+      res.status(404).json({ error: "Project not found" })
+      return
+    }
+    res.status(200).json({ project })
+  } catch (error) {
+    console.error("[projectsRouter.GET /:projectId] Failed:", error)
+    res.status(500).json({ error: "Failed to fetch project" })
+  }
+})
+
+// POST /api/projects — create a project owned by the authenticated user
 projectsRouter.post("/", async (req, res) => {
   console.log(`[projectsRouter.POST] Received request to create project`)
 
@@ -94,7 +118,10 @@ projectsRouter.post("/", async (req, res) => {
 
   try {
     const project = await prisma.project.create({
-      data: { name: projectName },
+      data: {
+        name: projectName,
+        userId: req.user!.id,
+      },
     })
     console.log(`[projectsRouter.POST] Created project: ${project.id}`)
 
@@ -124,12 +151,13 @@ projectsRouter.post("/", async (req, res) => {
   }
 })
 
+// POST /api/projects/:projectId/preview — start or reuse sandbox preview
 projectsRouter.post("/:projectId/preview", async (req, res) => {
   const { projectId } = req.params as { projectId: string }
 
-  const project = await prisma.project.findUnique({ where: { id: projectId } })
+  const project = await ensureProjectOwnership(projectId, req.user!.id)
   if (!project) {
-    res.status(404).json({ error: "project not found" })
+    res.status(404).json({ error: "Project not found" })
     return
   }
 

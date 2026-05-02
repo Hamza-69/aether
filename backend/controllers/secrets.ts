@@ -3,19 +3,16 @@ import { prisma } from "../lib/prisma"
 import { decryptFromClient } from "../lib/clientEncryption"
 import { encrypt } from "../lib/encryption"
 import { UpsertSecretsBodySchema } from "../models"
+import { ensureProjectOwnership } from "../lib/ensureProjectOwnership"
 
 export const secretsRouter = Router({ mergeParams: true })
-
-const ensureProject = async (projectId: string) => {
-  return prisma.project.findUnique({ where: { id: projectId }, select: { id: true } })
-}
 
 secretsRouter.get("/", async (req, res) => {
   const { projectId } = req.params as { projectId: string }
   try {
-    const project = await ensureProject(projectId)
+    const project = await ensureProjectOwnership(projectId, req.user!.id)
     if (!project) {
-      res.status(404).json({ error: "project not found" })
+      res.status(404).json({ error: "Project not found" })
       return
     }
     const secrets = await prisma.secret.findMany({
@@ -39,9 +36,9 @@ secretsRouter.post("/", async (req, res) => {
   }
 
   try {
-    const project = await ensureProject(projectId)
+    const project = await ensureProjectOwnership(projectId, req.user!.id)
     if (!project) {
-      res.status(404).json({ error: "project not found" })
+      res.status(404).json({ error: "Project not found" })
       return
     }
 
@@ -90,9 +87,9 @@ secretsRouter.post("/", async (req, res) => {
 secretsRouter.delete("/:name", async (req, res) => {
   const { projectId, name } = req.params as { projectId: string; name: string }
   try {
-    const project = await ensureProject(projectId)
+    const project = await ensureProjectOwnership(projectId, req.user!.id)
     if (!project) {
-      res.status(404).json({ error: "project not found" })
+      res.status(404).json({ error: "Project not found" })
       return
     }
     const deleted = await prisma.secret.deleteMany({ where: { projectId, name } })

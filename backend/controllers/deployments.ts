@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express"
 import { prisma } from "../lib/prisma"
 import { inngest } from "../ai/inngest/client"
+import { ensureProjectOwnership } from "../lib/ensureProjectOwnership"
 
 export const FLY_SECRET_NAME = "FLY_API_TOKEN"
 
@@ -13,12 +14,9 @@ export const deploymentsRouter = Router({ mergeParams: true })
 deploymentsRouter.get("/", async (req, res) => {
   const { projectId } = req.params as { projectId: string }
   try {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { id: true },
-    })
+    const project = await ensureProjectOwnership(projectId, req.user!.id)
     if (!project) {
-      res.status(404).json({ error: "project not found" })
+      res.status(404).json({ error: "Project not found" })
       return
     }
     const deployments = await prisma.deployment.findMany({
@@ -35,16 +33,9 @@ deploymentsRouter.get("/", async (req, res) => {
 export const deployProjectHandler = async (req: Request, res: Response) => {
   const { projectId } = req.params as { projectId: string }
   try {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: {
-        id: true,
-        deploymentStatus: true,
-        deploymentStartedAt: true,
-      },
-    })
+    const project = await ensureProjectOwnership(projectId, req.user!.id)
     if (!project) {
-      res.status(404).json({ error: "project not found" })
+      res.status(404).json({ error: "Project not found" })
       return
     }
 

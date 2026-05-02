@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express"
 import { prisma } from "../lib/prisma"
 import { inngest } from "../ai/inngest/client"
 import { GenerateKeystoreBodySchema } from "../models"
+import { ensureProjectOwnership } from "../lib/ensureProjectOwnership"
 
 // Stale cutoff for a crashed keystore job — after this, we let a new caller
 // re-claim the SCHEDULED/RUNNING slot even though the lock is technically held.
@@ -12,21 +13,22 @@ export const keystoresRouter = Router({ mergeParams: true })
 keystoresRouter.get("/", async (req, res) => {
   const { projectId } = req.params as { projectId: string }
   try {
+    const project = await ensureProjectOwnership(projectId, req.user!.id)
+    if (!project) {
+      res.status(404).json({ error: "Project not found" })
+      return
+    }
     const keystore = await prisma.keyStore.findUnique({
       where: { projectId },
       select: { id: true, createdAt: true, updatedAt: true },
     })
-    const project = await prisma.project.findUnique({
+    const projectStatus = await prisma.project.findUnique({
       where: { id: projectId },
       select: { keyStoreStatus: true },
     })
-    if (!project) {
-      res.status(404).json({ error: "project not found" })
-      return
-    }
     res.status(200).json({
       exists: Boolean(keystore),
-      status: project.keyStoreStatus,
+      status: projectStatus?.keyStoreStatus ?? "IDLE",
       keystore,
     })
   } catch (error) {
@@ -44,7 +46,13 @@ export const generateKeystoreHandler = async (req: Request, res: Response) => {
       return
     }
 
-    const project = await prisma.project.findUnique({
+    const project = await ensureProjectOwnership(projectId, req.user!.id)
+    if (!project) {
+      res.status(404).json({ error: "Project not found" })
+      return
+    }
+
+    const projectWithKeyStore = await prisma.project.findUnique({
       where: { id: projectId },
       select: {
         id: true,
@@ -53,14 +61,10 @@ export const generateKeystoreHandler = async (req: Request, res: Response) => {
         keyStore: { select: { id: true } },
       },
     })
-    if (!project) {
-      res.status(404).json({ error: "project not found" })
-      return
-    }
 
     // Idempotency: short-circuit if the keystore already exists. Regenerating
     // would orphan any already-signed APKs — never overwrite silently.
-    if (project.keyStore) {
+    if (projectWithKeyStore?.keyStore) {
       res.status(200).json({
         scheduled: false,
         alreadyExists: true,
@@ -91,7 +95,7 @@ export const generateKeystoreHandler = async (req: Request, res: Response) => {
     if (claimed.count === 0) {
       res.status(409).json({
         error: "Keystore generation already in progress for this project",
-        keyStoreStatus: project.keyStoreStatus,
+        keyStoreStatus: projectWithKeyStore?.keyStoreStatus ?? "IDLE",
       })
       return
     }

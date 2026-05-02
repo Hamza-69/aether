@@ -20,6 +20,15 @@ export const codeAgentFunction = inngest.createFunction(
   { event: "code-agent/run" },
   async ({ event, step, publish }: { event: any, step: any, publish: Function }) => {
 
+    // Resolve the project owner so channels are scoped per user
+    const project = await step.run("resolve-project-owner", async () => {
+      return prisma.project.findUniqueOrThrow({
+        where: { id: event.data.projectId },
+        select: { userId: true },
+      })
+    })
+    const userId = project.userId
+
     const { messageId, streamId } = await step.run("create-initial-message", async () => {
       const created = await prisma.message.create({
         data: {
@@ -43,7 +52,7 @@ export const codeAgentFunction = inngest.createFunction(
 
       await publishFunction(
         publish,
-        "project_code_agent:" + event.data.projectId,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
         "ai",
         agentMessage as any,
         stream.id,
@@ -56,7 +65,7 @@ export const codeAgentFunction = inngest.createFunction(
     const latestFragment = await step.run("get-latest-fragment", async () => {
       await publishFunction(
         publish,
-        "project_code_agent:" + event.data.projectId,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
         "ai",
         { message: "Let me start by getting the state of the previous code..." },
         streamId,
@@ -80,7 +89,7 @@ export const codeAgentFunction = inngest.createFunction(
     const SandboxId = await step.run("get-sandbox-id", async () => {
       await publishFunction(
         publish,
-        "project_code_agent:" + event.data.projectId,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
         "ai",
         { message: "Starting up a sandbox for you to run the code..." },
         streamId,
@@ -93,7 +102,7 @@ export const codeAgentFunction = inngest.createFunction(
     await step.run("setup-or-restore-sandbox", async () => {
       await publishFunction(
         publish,
-        "project_code_agent:" + event.data.projectId,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
         "ai",
         { message: "Let me now restore the state of the code..." },
         streamId,
@@ -131,6 +140,7 @@ export const codeAgentFunction = inngest.createFunction(
       messageId,
       streamId,
       projectId: event.data.projectId,
+      userId,
     })
 
     const network = createNetwork<AgentState>({
@@ -178,7 +188,7 @@ export const codeAgentFunction = inngest.createFunction(
     const fragmentId = await step.run("tar-and-upload", async () => {
       await publishFunction(
         publish,
-        "project_code_agent:" + event.data.projectId,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
         "ai",
         { message: "Saving the new state of the code..." },
         streamId,
@@ -223,7 +233,7 @@ export const codeAgentFunction = inngest.createFunction(
 
       await publishFunction(
         publish,
-        "project_code_agent:" + event.data.projectId,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
         "ai",
         { fragment: updatedFragment as any },
         streamId,
@@ -235,7 +245,7 @@ export const codeAgentFunction = inngest.createFunction(
     const sandboxUrl = await step.run("run-project-and-get-sandbox-url", async () => {
       await publishFunction(
         publish,
-        "project_code_agent:" + event.data.projectId,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
         "ai",
         { message: "Booting up a preview..." },
         streamId,
@@ -285,7 +295,7 @@ export const codeAgentFunction = inngest.createFunction(
 
       await publishFunction(
         publish,
-        "project_code_agent:" + event.data.projectId,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
         "ai",
         { preview: preview as any, previewStatus: "RUNNING" },
         streamId,
@@ -306,7 +316,7 @@ export const codeAgentFunction = inngest.createFunction(
 
       await publishFunction(
         publish,
-        "project_code_agent:" + event.data.projectId,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
         "ai",
         { message: finalMessage as any, done: true },
         streamId,

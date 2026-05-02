@@ -67,7 +67,15 @@ export const generateKeystoreFunction = inngest.createFunction(
       projectId: string
       subjectOverrides?: KeystoreSubjectOverrides
     }
-    const channel = "project_generate_keystore:" + projectId
+
+    // Resolve the project owner so channels are scoped per user
+    const projectOwner = await step.run("resolve-project-owner", async () => {
+      return prisma.project.findUniqueOrThrow({
+        where: { id: projectId },
+        select: { userId: true },
+      })
+    })
+    const channel = "project_generate_keystore:" + projectOwner.userId + ":" + projectId
 
     const { keystoreId, streamId } = await step.run("create-incomplete-keystore", async () => {
       const keystore = await prisma.keyStore.upsert({

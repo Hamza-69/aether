@@ -1,7 +1,7 @@
 import { inngest } from "../ai/inngest/client"
 import { getSubscriptionToken } from "@inngest/realtime"
 import express, { Router } from "express"
-import { prisma } from "../lib/prisma"
+import { ensureProjectOwnership } from "../lib/ensureProjectOwnership"
 
 export const realtimeRouter: Router = express.Router()
 
@@ -33,13 +33,13 @@ realtimeRouter.post("/", async (req, res): Promise<void> => {
     return
   }
 
-  const project = await prisma.project.findUnique({ where: { id: projectId } })
+  const project = await ensureProjectOwnership(projectId, req.user!.id)
   if (!project) {
     res.status(404).json({ error: "Project not found" })
     return
   }
 
-  const channel = `${config.channelPrefix}:${projectId}`
+  const channel = `${config.channelPrefix}:${req.user!.id}:${projectId}`
 
   const token = await getSubscriptionToken(inngest, {
     channel,

@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma"
 import { inngest } from "../ai/inngest/client"
 import { EXPO_SECRET_NAME } from "../ai/inngest/jobs/export-apk"
 import { getStateDownloadUrl } from "../lib/storage"
+import { ensureProjectOwnership } from "../lib/ensureProjectOwnership"
 
 const APK_DOWNLOAD_URL_TTL_SECONDS = 60 * 60
 
@@ -15,12 +16,9 @@ export const apksRouter = Router({ mergeParams: true })
 apksRouter.get("/", async (req, res) => {
   const { projectId } = req.params as { projectId: string }
   try {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { id: true },
-    })
+    const project = await ensureProjectOwnership(projectId, req.user!.id)
     if (!project) {
-      res.status(404).json({ error: "project not found" })
+      res.status(404).json({ error: "Project not found" })
       return
     }
     const apks = await prisma.aPK.findMany({
@@ -37,6 +35,11 @@ apksRouter.get("/", async (req, res) => {
 apksRouter.get("/:apkId/download-url", async (req, res) => {
   const { projectId, apkId } = req.params as { projectId: string; apkId: string }
   try {
+    const project = await ensureProjectOwnership(projectId, req.user!.id)
+    if (!project) {
+      res.status(404).json({ error: "Project not found" })
+      return
+    }
     const apk = await prisma.aPK.findFirst({
       where: { id: apkId, projectId },
       select: { id: true, url: true },
@@ -61,7 +64,13 @@ apksRouter.get("/:apkId/download-url", async (req, res) => {
 export const exportApkHandler = async (req: Request, res: Response) => {
   const { projectId } = req.params as { projectId: string }
   try {
-    const project = await prisma.project.findUnique({
+    const project = await ensureProjectOwnership(projectId, req.user!.id)
+    if (!project) {
+      res.status(404).json({ error: "Project not found" })
+      return
+    }
+
+    const projectDetails = await prisma.project.findUnique({
       where: { id: projectId },
       select: {
         id: true,
@@ -70,14 +79,10 @@ export const exportApkHandler = async (req: Request, res: Response) => {
         keyStore: { select: { id: true } },
       },
     })
-    if (!project) {
-      res.status(404).json({ error: "project not found" })
-      return
-    }
 
     // Gate: APK export requires a keystore. Caller must generate one first
     // via POST /api/projects/:projectId/keystore.
-    if (!project.keyStore) {
+    if (!projectDetails?.keyStore) {
       res.status(400).json({
         error:
           "No keystore found for this project. Generate one via POST /api/projects/:projectId/keystore before exporting an APK.",
@@ -143,7 +148,7 @@ export const exportApkHandler = async (req: Request, res: Response) => {
     if (claimed.count === 0) {
       res.status(409).json({
         error: "An APK export for this project is already in progress",
-        apkStatus: project.apkStatus,
+        apkStatus: projectDetails.apkStatus,
       })
       return
     }

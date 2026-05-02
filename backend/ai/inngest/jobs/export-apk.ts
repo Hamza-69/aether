@@ -89,7 +89,15 @@ export const exportApkFunction = inngest.createFunction(
   { event: "export-apk/run" },
   async ({ event, step, publish }: { event: any, step: any, publish: Function }) => {
     const { projectId } = event.data as { projectId: string }
-    const channel = "project_export_apk:" + projectId
+
+    // Resolve the project owner so channels are scoped per user
+    const projectOwner = await step.run("resolve-project-owner", async () => {
+      return prisma.project.findUniqueOrThrow({
+        where: { id: projectId },
+        select: { userId: true },
+      })
+    })
+    const channel = "project_export_apk:" + projectOwner.userId + ":" + projectId
 
     const { messageId, streamId } = await step.run("create-initial-message", async () => {
       const created = await prisma.message.create({

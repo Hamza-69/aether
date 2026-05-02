@@ -24,6 +24,7 @@ export interface AgentState {
   messageId: string
   streamId: string
   projectId: string
+  userId: string
 }
 
 export const tools = [
