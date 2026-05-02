@@ -90,6 +90,8 @@ model Project {
   apkStatus    ApkStatus @default(IDLE)
   apkStartedAt DateTime? @db.Timestamptz(3)
 
+  screenshotUrl String?
+
   messages    Message[]
   apks        APK[]
   keyStore    KeyStore?

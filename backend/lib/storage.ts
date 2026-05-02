@@ -67,3 +67,27 @@ export async function getProfilePictureUrl(key: string, expiresIn = 3600) {
   })
   return getSignedUrl(tigris, command, { expiresIn })
 }
+
+/**
+ * Upload a project screenshot with public-read ACL.
+ * Returns a permanent public URL (no presigning needed).
+ */
+export async function uploadScreenshot(
+  projectId: string,
+  pngBuffer: Buffer | Uint8Array,
+): Promise<string> {
+  const key = `screenshots/${projectId}/${Date.now()}.png`
+
+  await tigris.send(
+    new PutObjectCommand({
+      Bucket: process.env.BUCKET_NAME!,
+      Key: key,
+      Body: pngBuffer,
+      ContentType: "image/png",
+      ACL: "public-read",
+    }),
+  )
+
+  // Permanent public URL via Tigris CDN
+  return `https://${process.env.BUCKET_NAME!}.fly.storage.tigris.dev/${key}`
+}

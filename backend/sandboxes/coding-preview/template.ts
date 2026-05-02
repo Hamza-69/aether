@@ -31,6 +31,9 @@ RUN curl -L https://fly.io/install.sh | sh \
 ENV FLY_INSTALL=/usr/local/fly
 ENV PATH="/usr/local/fly/bin:$PATH"
 
+# Playwright + Chromium for in-sandbox screenshots
+RUN npm install -g playwright && npx playwright install-deps && npx playwright install chromium
+
 WORKDIR /app
 
 COPY ./deploy.sh /app/deploy.sh
