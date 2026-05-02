@@ -15,7 +15,7 @@ model User {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  projects  Project[]
+  projects Project[]
 }
 
 enum MessageRole {
@@ -67,13 +67,13 @@ model NativeWindDocs {
 }
 
 model Project {
-  id         String      @id @default(cuid())
-  name       String
-  createdAt  DateTime    @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime    @updatedAt @db.Timestamptz(3)
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-   userId String?
-  user   User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   previewUrl       String?
   previewStatus    PreviewStatus @default(IDLE)
@@ -113,37 +113,37 @@ model APK {
   url       String
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
-  
+
   // Required Back-relation
   projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model Message {
-  id         String    @id @default(cuid())
-  content    String
-  role       MessageRole
-  type       MessageType
-  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
-  
-  projectId  String
-  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id        String      @id @default(cuid())
+  content   String
+  role      MessageRole
+  type      MessageType
+  createdAt DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime    @updatedAt @db.Timestamptz(3)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   fragmentId String?
   fragment   Fragment? @relation(fields: [fragmentId], references: [id])
 }
 
 model Fragment {
-  id              String   @id @default(cuid())
-  content         String
-  frontendTarKey  String?
-  backendTarKey   String?
-  createdAt       DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+  id             String   @id @default(cuid())
+  content        String
+  frontendTarKey String?
+  backendTarKey  String?
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
 
   // Required Back-relation
-  messages  Message[]
+  messages Message[]
 }
 
 model KeyStore {
@@ -154,8 +154,8 @@ model KeyStore {
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   // Required Back-relation (1-to-1 requires @unique)
-  projectId String   @unique
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String  @unique
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model Deployment {
@@ -165,7 +165,7 @@ model Deployment {
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
 }
