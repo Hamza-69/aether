@@ -18,6 +18,9 @@ public class AuthViewModel extends ViewModel {
 
     private final MutableLiveData<AuthResponse> authSuccess = new MutableLiveData<>();
     private final MutableLiveData<VerificationStartResponse> verificationStarted = new MutableLiveData<>();
+    private final MutableLiveData<VerificationStartResponse> resetStarted = new MutableLiveData<>();
+    private final MutableLiveData<VerificationStartResponse> resetCodeVerified = new MutableLiveData<>();
+    private final MutableLiveData<String> resetPasswordSuccess = new MutableLiveData<>();
     private final MutableLiveData<String> authError = new MutableLiveData<>();
     private final MutableLiveData<Boolean> loading = new MutableLiveData<>();
 
@@ -39,6 +42,18 @@ public class AuthViewModel extends ViewModel {
 
     public LiveData<Boolean> getLoading() {
         return loading;
+    }
+
+    public LiveData<VerificationStartResponse> getResetStarted() {
+        return resetStarted;
+    }
+
+    public LiveData<VerificationStartResponse> getResetCodeVerified() {
+        return resetCodeVerified;
+    }
+
+    public LiveData<String> getResetPasswordSuccess() {
+        return resetPasswordSuccess;
     }
 
     public void signin(String email, String password) {
@@ -64,10 +79,10 @@ public class AuthViewModel extends ViewModel {
         });
     }
 
-    public void signup(String name, String email, String password) {
+    public void signup(String name, String username, String email, String password) {
         loading.setValue(true);
 
-        authRepository.signup(name, email, password).enqueue(new Callback<VerificationStartResponse>() {
+        authRepository.signup(name, username, email, password).enqueue(new Callback<VerificationStartResponse>() {
             @Override
             public void onResponse(Call<VerificationStartResponse> call, Response<VerificationStartResponse> response) {
                 loading.setValue(false);
@@ -122,6 +137,76 @@ public class AuthViewModel extends ViewModel {
                     authSuccess.setValue(response.body());
                 } else {
                     authError.setValue(extractErrorMessage(response, "Invalid or expired verification code"));
+                }
+            }
+
+            @Override
+            public void onFailure(Call<AuthResponse> call, Throwable t) {
+                loading.setValue(false);
+                authError.setValue("Connection failed: " + t.getMessage());
+            }
+        });
+    }
+
+    public void forgotPassword(String email) {
+        loading.setValue(true);
+
+        authRepository.forgotPassword(email).enqueue(new Callback<VerificationStartResponse>() {
+            @Override
+            public void onResponse(Call<VerificationStartResponse> call, Response<VerificationStartResponse> response) {
+                loading.setValue(false);
+
+                if (response.isSuccessful() && response.body() != null) {
+                    resetStarted.setValue(response.body());
+                } else {
+                    authError.setValue(extractErrorMessage(response, "Failed to send reset code"));
+                }
+            }
+
+            @Override
+            public void onFailure(Call<VerificationStartResponse> call, Throwable t) {
+                loading.setValue(false);
+                authError.setValue("Connection failed: " + t.getMessage());
+            }
+        });
+    }
+
+    public void verifyResetCode(String challengeId, String code) {
+        loading.setValue(true);
+
+        authRepository.verifyResetCode(challengeId, code).enqueue(new Callback<VerificationStartResponse>() {
+            @Override
+            public void onResponse(Call<VerificationStartResponse> call, Response<VerificationStartResponse> response) {
+                loading.setValue(false);
+
+                if (response.isSuccessful() && response.body() != null) {
+                    resetCodeVerified.setValue(response.body());
+                } else {
+                    authError.setValue(extractErrorMessage(response, "Invalid or expired reset code"));
+                }
+            }
+
+            @Override
+            public void onFailure(Call<VerificationStartResponse> call, Throwable t) {
+                loading.setValue(false);
+                authError.setValue("Connection failed: " + t.getMessage());
+            }
+        });
+    }
+
+    public void resetPassword(String challengeId, String password) {
+        loading.setValue(true);
+
+        authRepository.resetPassword(challengeId, password).enqueue(new Callback<AuthResponse>() {
+            @Override
+            public void onResponse(Call<AuthResponse> call, Response<AuthResponse> response) {
+                loading.setValue(false);
+
+                if (response.isSuccessful() && response.body() != null) {
+                    String message = response.body().getMessage();
+                    resetPasswordSuccess.setValue((message == null || message.trim().isEmpty()) ? "Password changed successfully" : message);
+                } else {
+                    authError.setValue(extractErrorMessage(response, "Failed to reset password"));
                 }
             }
 

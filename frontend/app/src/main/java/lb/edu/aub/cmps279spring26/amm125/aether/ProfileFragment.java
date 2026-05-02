@@ -24,9 +24,11 @@ public class ProfileFragment extends Fragment {
         userManager.load(requireContext());
 
         TextView tvProfileName = view.findViewById(R.id.tvProfileName);
+        TextView tvProfileUsername = view.findViewById(R.id.tvProfileUsername);
         TextView tvProfileEmail = view.findViewById(R.id.tvProfileEmail);
 
         String name = userManager.getName();
+        String username = userManager.getUsername();
         String email = userManager.getEmail();
 
         if (TextUtils.isEmpty(name)) {
@@ -35,8 +37,12 @@ public class ProfileFragment extends Fragment {
         if (TextUtils.isEmpty(email)) {
             email = "No email";
         }
+        if (TextUtils.isEmpty(username)) {
+            username = "guest";
+        }
 
         tvProfileName.setText(name);
+        tvProfileUsername.setText("@" + username);
         tvProfileEmail.setText(email);
 
         MaterialCardView btnLogout = view.findViewById(R.id.btnLogout);
