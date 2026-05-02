@@ -21,6 +21,9 @@ export interface AgentState {
   error: string
   SandboxId: string
   publishCallback: Function
+  messageId: string
+  streamId: string
+  projectId: string
 }
 
 export const tools = [

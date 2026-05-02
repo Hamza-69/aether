@@ -114,6 +114,7 @@ model Message {
   type      MessageType
   createdAt DateTime    @default(now()) @db.Timestamptz(3)
   updatedAt DateTime    @updatedAt @db.Timestamptz(3)
+  completed Boolean     @default(false)
 
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
