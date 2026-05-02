@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken"
 import { prisma } from "../lib/prisma"
 import { sendEmail } from "../lib/email"
 import { requireAuth } from "../lib/auth"
+import { uploadProfilePicture, getProfilePictureUrl } from "../lib/storage"
 
 export const authRouter = express.Router()
 
@@ -501,6 +502,7 @@ authRouter.get("/me", requireAuth, async (req, res) => {
         name: true,
         username: true,
         email: true,
+        profilePicture: true,
         createdAt: true,
       },
     })
@@ -509,11 +511,91 @@ authRouter.get("/me", requireAuth, async (req, res) => {
       return res.status(404).json({ message: "User not found" })
     }
 
-    return res.status(200).json({ user })
+    let profilePictureUrl: string | null = null
+    if (user.profilePicture) {
+      profilePictureUrl = await getProfilePictureUrl(user.profilePicture)
+    }
+
+    return res.status(200).json({
+      user: {
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        profilePictureUrl,
+        createdAt: user.createdAt,
+      },
+    })
   } catch (error) {
     console.error("Get current user error:", error)
     return res.status(500).json({
       message: "Server error while fetching user",
+    })
+  }
+})
+
+// UPLOAD PROFILE PICTURE
+authRouter.put("/me/profile-picture", requireAuth, async (req, res) => {
+  try {
+    const { image, mimeType } = req.body
+
+    if (!image || !mimeType) {
+      return res.status(400).json({
+        message: "image (base64) and mimeType are required",
+      })
+    }
+
+    const allowedTypes = ["image/png", "image/jpeg", "image/webp", "image/gif"]
+    if (!allowedTypes.includes(mimeType)) {
+      return res.status(400).json({
+        message: `Unsupported image type. Allowed: ${allowedTypes.join(", ")}`,
+      })
+    }
+
+    // Limit file size (~5 MB in base64 ≈ ~6.7 MB string)
+    const MAX_BASE64_LENGTH = 7 * 1024 * 1024
+    if (image.length > MAX_BASE64_LENGTH) {
+      return res.status(400).json({
+        message: "Image too large. Maximum size is 5 MB",
+      })
+    }
+
+    const key = await uploadProfilePicture(req.user!.id, image, mimeType)
+
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { profilePicture: key },
+    })
+
+    const profilePictureUrl = await getProfilePictureUrl(key)
+
+    return res.status(200).json({
+      message: "Profile picture updated",
+      profilePictureUrl,
+    })
+  } catch (error) {
+    console.error("Upload profile picture error:", error)
+    return res.status(500).json({
+      message: "Server error while uploading profile picture",
+    })
+  }
+})
+
+// DELETE PROFILE PICTURE
+authRouter.delete("/me/profile-picture", requireAuth, async (req, res) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { profilePicture: null },
+    })
+
+    return res.status(200).json({
+      message: "Profile picture removed",
+    })
+  } catch (error) {
+    console.error("Delete profile picture error:", error)
+    return res.status(500).json({
+      message: "Server error while removing profile picture",
     })
   }
 })
