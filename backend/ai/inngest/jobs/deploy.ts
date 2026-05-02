@@ -44,10 +44,22 @@ const extractFlyAppName = (flyToml: string): string | null => {
 const loadFlyToken = async (projectId: string): Promise<string> => {
   const row = await prisma.secret.findUnique({
     where: { projectId_name: { projectId, name: FLY_SECRET_NAME } },
-    select: { encryptedValue: true },
+    select: { encryptedValue: true, useUserSecret: true },
   })
   if (!row) throw new Error(`${FLY_SECRET_NAME} not set for project`)
-  return decrypt(Buffer.from(row.encryptedValue)).toString("utf8")
+  
+  let encryptedValue = row.encryptedValue
+  if (row.useUserSecret) {
+    const project = await prisma.project.findUnique({ where: { id: projectId }, select: { userId: true } })
+    const userRow = await prisma.userSecret.findUnique({
+      where: { userId_name: { userId: project!.userId, name: FLY_SECRET_NAME } },
+      select: { encryptedValue: true },
+    })
+    encryptedValue = userRow?.encryptedValue ?? null
+  }
+
+  if (!encryptedValue) throw new Error(`${FLY_SECRET_NAME} token is empty`)
+  return decrypt(Buffer.from(encryptedValue)).toString("utf8")
 }
 
 export const deployProjectFunction = inngest.createFunction(

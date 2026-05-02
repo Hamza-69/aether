@@ -5,6 +5,7 @@ import cors from "cors"
 import morgan from "morgan"
 import { projectsRouter } from "./controllers/projects"
 import { authRouter } from "./controllers/auth"
+import { userSecretsRouter } from "./controllers/userSecrets"
 import { codeAgentFunction } from "./ai/inngest/jobs/agent"
 import { previewProjectFunction } from "./ai/inngest/jobs/preview"
 import { deployProjectFunction } from "./ai/inngest/jobs/deploy"
@@ -56,6 +57,7 @@ app.use(
 app.use("/api/auth", authRouter)
 
 // Protected routes — requireAuth runs before any handler in these routers
+app.use("/api/secrets", requireAuth, userSecretsRouter)
 app.use("/api/projects", requireAuth, projectsRouter)
 app.use("/api/realtime", requireAuth, realtimeRouter)
 

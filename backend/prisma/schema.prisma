@@ -17,7 +17,8 @@ model User {
   createdAt      DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  projects Project[]
+  projects    Project[]
+  userSecrets UserSecret[]
 }
 
 enum MessageRole {
@@ -114,7 +115,8 @@ model Preview {
 model Secret {
   id             String   @id @default(cuid())
   name           String
-  encryptedValue Bytes
+  encryptedValue Bytes?
+  useUserSecret  Boolean  @default(false)
   createdAt      DateTime @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime @updatedAt @db.Timestamptz(3)
 
@@ -224,4 +226,17 @@ model StreamChunk {
 
   streamId String
   stream   Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+}
+
+model UserSecret {
+  id             String   @id @default(cuid())
+  name           String
+  encryptedValue Bytes
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
 }

@@ -41,9 +41,23 @@ export const deployProjectHandler = async (req: Request, res: Response) => {
 
     const flySecret = await prisma.secret.findUnique({
       where: { projectId_name: { projectId, name: FLY_SECRET_NAME } },
-      select: { id: true },
+      select: { id: true, useUserSecret: true },
     })
-    if (!flySecret) {
+    
+    let hasFlySecret = false
+    if (flySecret) {
+      if (flySecret.useUserSecret) {
+        const flyUserSecret = await prisma.userSecret.findUnique({
+          where: { userId_name: { userId: req.user!.id, name: FLY_SECRET_NAME } },
+          select: { id: true },
+        })
+        hasFlySecret = !!flyUserSecret
+      } else {
+        hasFlySecret = true
+      }
+    }
+
+    if (!hasFlySecret) {
       res.status(400).json({
         error: `${FLY_SECRET_NAME} secret is not set for this project. Add it before deploying.`,
       })

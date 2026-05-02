@@ -93,9 +93,23 @@ export const exportApkHandler = async (req: Request, res: Response) => {
     // Gate: APK export uses EAS, which needs an Expo personal access token.
     const expoSecret = await prisma.secret.findUnique({
       where: { projectId_name: { projectId, name: EXPO_SECRET_NAME } },
-      select: { id: true },
+      select: { id: true, useUserSecret: true },
     })
-    if (!expoSecret) {
+
+    let hasExpoSecret = false
+    if (expoSecret) {
+      if (expoSecret.useUserSecret) {
+        const expoUserSecret = await prisma.userSecret.findUnique({
+          where: { userId_name: { userId: req.user!.id, name: EXPO_SECRET_NAME } },
+          select: { id: true },
+        })
+        hasExpoSecret = !!expoUserSecret
+      } else {
+        hasExpoSecret = true
+      }
+    }
+
+    if (!hasExpoSecret) {
       res.status(400).json({
         error: `${EXPO_SECRET_NAME} secret is not set for this project. Add it before exporting an APK.`,
       })

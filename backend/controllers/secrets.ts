@@ -17,7 +17,7 @@ secretsRouter.get("/", async (req, res) => {
     }
     const secrets = await prisma.secret.findMany({
       where: { projectId },
-      select: { name: true, updatedAt: true },
+      select: { name: true, useUserSecret: true, updatedAt: true },
       orderBy: { name: "asc" },
     })
     res.status(200).json({ secrets })
@@ -52,27 +52,48 @@ secretsRouter.post("/", async (req, res) => {
       names.add(name)
     }
 
-    const prepared: { name: string; encryptedValue: Uint8Array<ArrayBuffer> }[] = []
-    for (const { name, encryptedValue } of secrets) {
-      let plaintext: string
-      try {
-        plaintext = decryptFromClient(encryptedValue)
-      } catch {
-        res.status(400).json({ error: `failed to decrypt secret '${name}' with CLIENT_SECRET_KEY` })
-        return
+    const secretsUsingUser = secrets.filter(s => s.useUserSecret).map(s => s.name)
+    if (secretsUsingUser.length > 0) {
+      const userSecrets = await prisma.userSecret.findMany({
+        where: { userId: req.user!.id, name: { in: secretsUsingUser } },
+        select: { name: true }
+      })
+      const foundUserSecrets = new Set(userSecrets.map(s => s.name))
+      for (const name of secretsUsingUser) {
+        if (!foundUserSecrets.has(name)) {
+          res.status(400).json({ error: `Cannot use account secret for '${name}' because it does not exist in your account` })
+          return
+        }
       }
-      const encrypted = encrypt(Buffer.from(plaintext, "utf8"))
-      const bytes = new Uint8Array(new ArrayBuffer(encrypted.length))
-      bytes.set(encrypted)
-      prepared.push({ name, encryptedValue: bytes })
+    }
+
+    const prepared: { name: string; encryptedValue: Uint8Array<ArrayBuffer> | null; useUserSecret: boolean }[] = []
+    for (const { name, encryptedValue, useUserSecret } of secrets) {
+      let bytes: Uint8Array<ArrayBuffer> | null = null
+      if (encryptedValue) {
+        let plaintext: string
+        try {
+          plaintext = decryptFromClient(encryptedValue)
+        } catch {
+          res.status(400).json({ error: `failed to decrypt secret '${name}' with CLIENT_SECRET_KEY` })
+          return
+        }
+        const encrypted = encrypt(Buffer.from(plaintext, "utf8"))
+        bytes = new Uint8Array(new ArrayBuffer(encrypted.length))
+        bytes.set(encrypted)
+      }
+      prepared.push({ name, encryptedValue: bytes, useUserSecret })
     }
 
     await prisma.$transaction(
-      prepared.map(({ name, encryptedValue }) =>
+      prepared.map(({ name, encryptedValue, useUserSecret }) =>
         prisma.secret.upsert({
           where: { projectId_name: { projectId, name } },
-          create: { projectId, name, encryptedValue },
-          update: { encryptedValue },
+          create: { projectId, name, encryptedValue, useUserSecret },
+          update: { 
+            ...(encryptedValue !== null ? { encryptedValue } : {}),
+            useUserSecret 
+          },
         }),
       ),
     )

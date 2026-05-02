@@ -35,16 +35,41 @@ export const resolveBackendSecretsFromExample = async (
 
   const keys = parseEnvKeys(exampleContents)
   if (keys.length === 0) return {}
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { userId: true },
+  })
+  if (!project) return {}
+  const userId = project.userId
 
   const rows = await prisma.secret.findMany({
     where: { projectId, name: { in: keys } },
-    select: { name: true, encryptedValue: true },
+    select: { name: true, encryptedValue: true, useUserSecret: true },
   })
+
+  const useUserSecretKeys = rows.filter(r => r.useUserSecret).map(r => r.name)
+  let userRows: { name: string, encryptedValue: any }[] = []
+
+  if (useUserSecretKeys.length > 0) {
+    userRows = await prisma.userSecret.findMany({
+      where: { userId, name: { in: useUserSecretKeys } },
+      select: { name: true, encryptedValue: true },
+    })
+  }
+
+  const userRowMap = new Map(userRows.map(r => [r.name, r.encryptedValue]))
 
   const out: Record<string, string> = {}
   for (const row of rows) {
     try {
-      out[row.name] = decrypt(Buffer.from(row.encryptedValue)).toString("utf8")
+      let encryptedValue = row.encryptedValue
+      if (row.useUserSecret) {
+        encryptedValue = userRowMap.get(row.name) || null
+      }
+      
+      if (encryptedValue) {
+        out[row.name] = decrypt(Buffer.from(encryptedValue)).toString("utf8")
+      }
     } catch (err) {
       console.error(`[projectSecrets] Failed to decrypt ${row.name}:`, err)
     }

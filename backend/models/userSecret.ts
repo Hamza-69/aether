@@ -2,7 +2,7 @@ import { z } from "../lib/zod"
 
 const SECRET_NAME = /^[A-Z_][A-Z0-9_]*$/
 
-export const SecretEntrySchema = z
+export const UserSecretEntrySchema = z
   .object({
     name: z
       .string()
@@ -13,30 +13,23 @@ export const SecretEntrySchema = z
     encryptedValue: z
       .string()
       .min(1)
-      .optional()
       .openapi({
         example: "base64-ciphertext",
         description:
           "Base64 of [IV(12) | AuthTag(16) | ciphertext] encrypted with CLIENT_SECRET_KEY (AES-256-GCM).",
       }),
-    useUserSecret: z.boolean().default(false).openapi({ example: false }),
   })
-  .refine(
-    (data) => data.useUserSecret || (data.encryptedValue !== undefined && data.encryptedValue.length > 0),
-    "Must provide encryptedValue if useUserSecret is false",
-  )
-  .openapi("SecretEntry")
+  .openapi("UserSecretEntry")
 
-export const UpsertSecretsBodySchema = z
+export const UpsertUserSecretsBodySchema = z
   .object({
-    secrets: z.array(SecretEntrySchema).min(1).max(100),
+    secrets: z.array(UserSecretEntrySchema).min(1).max(100),
   })
-  .openapi("UpsertSecretsBody")
+  .openapi("UpsertUserSecretsBody")
 
-export const SecretSummarySchema = z
+export const UserSecretSummarySchema = z
   .object({
     name: z.string().openapi({ example: "OPENAI_API_KEY" }),
-    useUserSecret: z.boolean().openapi({ example: false }),
     updatedAt: z.string().datetime(),
   })
-  .openapi("SecretSummary")
+  .openapi("UserSecretSummary")

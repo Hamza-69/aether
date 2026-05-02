@@ -18,6 +18,9 @@ import {
   KeyStoreSummarySchema,
   GenerateKeystoreResponseSchema,
   GenerateKeystoreBodySchema,
+  UserSecretEntrySchema,
+  UserSecretSummarySchema,
+  UpsertUserSecretsBodySchema,
 } from "./models"
 
 const registry = new OpenAPIRegistry()
@@ -47,6 +50,10 @@ registry.register("ExportApkResponse", ExportApkResponseSchema)
 registry.register("KeyStoreSummary", KeyStoreSummarySchema)
 registry.register("GenerateKeystoreResponse", GenerateKeystoreResponseSchema)
 registry.register("GenerateKeystoreBody", GenerateKeystoreBodySchema)
+
+registry.register("UserSecretEntry", UserSecretEntrySchema)
+registry.register("UserSecretSummary", UserSecretSummarySchema)
+registry.register("UpsertUserSecretsBody", UpsertUserSecretsBodySchema)
 
 const UserSchema = z
   .object({
@@ -402,6 +409,99 @@ registry.registerPath({
     },
     404: {
       description: "Project or secret not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+// ── User Secrets ────────────────────────────────────────────────────────────
+
+registry.registerPath({
+  method: "get",
+  path: "/api/secrets",
+  tags: ["User Secrets"],
+  summary: "List user account-level secret names",
+  description: "Returns only names and updatedAt timestamps for the user's account secrets.",
+  security: protectedRoute,
+  responses: {
+    200: {
+      description: "Secret summaries",
+      content: {
+        "application/json": {
+          schema: z.object({ secrets: z.array(UserSecretSummarySchema) }),
+        },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "post",
+  path: "/api/secrets",
+  tags: ["User Secrets"],
+  summary: "Write or overwrite user account-level secrets",
+  security: protectedRoute,
+  request: {
+    body: {
+      required: true,
+      content: { "application/json": { schema: UpsertUserSecretsBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Secrets written/overwritten",
+      content: {
+        "application/json": {
+          schema: z.object({ written: z.array(z.string()) }),
+        },
+      },
+    },
+    400: {
+      description: "Invalid body or decryption failure",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/secrets/{name}",
+  tags: ["User Secrets"],
+  summary: "Delete a user account-level secret by name",
+  security: protectedRoute,
+  request: {
+    params: z.object({
+      name: z.string().openapi({ example: "OPENAI_API_KEY" }),
+    }),
+  },
+  responses: {
+    204: { description: "Deleted" },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Secret not found",
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
