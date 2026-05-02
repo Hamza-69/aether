@@ -32,7 +32,6 @@ export const codeAgentFunction = inngest.createFunction(
 
       const stream = await prisma.stream.create({
         data: {
-          content: "",
           messageId: created.id,
         },
       })
@@ -271,9 +270,16 @@ export const codeAgentFunction = inngest.createFunction(
       await prisma.project.update({
         where: { id: event.data.projectId },
         data: {
-          previewUrl: sandboxUrl,
           previewStatus: "RUNNING",
           previewStartedAt: new Date(),
+        },
+      })
+
+      const preview = await prisma.preview.create({
+        data: {
+          projectId: event.data.projectId,
+          url: sandboxUrl,
+          completed: true,
         },
       })
 
@@ -281,7 +287,7 @@ export const codeAgentFunction = inngest.createFunction(
         publish,
         "project_code_agent:" + event.data.projectId,
         "ai",
-        { previewUrl: sandboxUrl, previewStatus: "RUNNING" },
+        { preview: preview as any, previewStatus: "RUNNING" },
         streamId,
       )
     })

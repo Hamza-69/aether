@@ -61,7 +61,6 @@ model Project {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  previewUrl       String?
   previewStatus    PreviewStatus @default(IDLE)
   previewStartedAt DateTime?     @db.Timestamptz(3)
 
@@ -79,7 +78,21 @@ model Project {
   keyStore    KeyStore?
   deployments Deployment[]
   secrets     Secret[]
-  stream      Stream?
+  previews    Preview[]
+}
+
+model Preview {
+  id        String   @id @default(cuid())
+  url       String?
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stream    Stream?
+
+  @@index([projectId])
 }
 
 model Secret {
@@ -137,8 +150,9 @@ model Fragment {
 
 model KeyStore {
   id        String   @id @default(cuid())
-  password  Bytes
-  data      Bytes
+  password  Bytes?
+  data      Bytes?
+  completed Boolean  @default(false)
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
@@ -163,7 +177,6 @@ model Deployment {
 
 model Stream {
   id        String   @id @default(cuid())
-  content   String
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
@@ -176,8 +189,8 @@ model Stream {
   deployment   Deployment? @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
 
   // Project relation (optional if you want direct access)
-  prejectId String?  @unique
-  project   Project? @relation(fields: [prejectId], references: [id], onDelete: Cascade)
+  previewId String?  @unique
+  preview   Preview? @relation(fields: [previewId], references: [id], onDelete: Cascade)
 
   keystoreId String?   @unique
   keystore   KeyStore? @relation(fields: [keystoreId], references: [id], onDelete: Cascade)

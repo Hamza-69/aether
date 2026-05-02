@@ -1,6 +1,6 @@
 import { inngest } from "../client"
 import { prisma } from "../../../lib/prisma"
-import { getSandbox } from "../../../lib/utils"
+import { getSandbox, publish as publishFunction } from "../../../lib/utils"
 import { getStateDownloadUrl } from "../../../lib/storage"
 import { resolveBackendSecretsFromExample, stringifyEnv } from "../../../lib/projectSecrets"
 
@@ -9,8 +9,44 @@ export const previewProjectFunction = inngest.createFunction(
   { event: "preview-project/run" },
   async ({ event, step, publish }: { event: any, step: any, publish: Function }) => {
     const { projectId, sandboxId } = event.data as { projectId: string; sandboxId: string }
+    const channel = "project_preview:" + projectId
+
+    const { previewId, streamId } = await step.run("create-incomplete-preview", async () => {
+      // Previews are an array per project; the most recent one is the "live"
+      // preview. Frontend looks up the latest Preview by projectId, then
+      // follows preview.stream to subscribe to this run.
+      const preview = await prisma.preview.create({
+        data: { projectId, completed: false },
+      })
+
+      const stream = await prisma.stream.create({
+        data: { previewId: preview.id },
+      })
+
+      const initialPreview = await prisma.preview.findUnique({
+        where: { id: preview.id },
+        include: { stream: true },
+      })
+
+      await publishFunction(
+        publish,
+        channel,
+        "preview",
+        initialPreview as any,
+        stream.id,
+      )
+
+      return { previewId: preview.id, streamId: stream.id }
+    })
 
     const fragment = await step.run("get-latest-fragment", async () => {
+      await publishFunction(
+        publish,
+        channel,
+        "preview",
+        { message: "Looking up the latest fragment..." },
+        streamId,
+      )
       const latest = await prisma.message.findFirst({
         where: {
           projectId,
@@ -30,8 +66,21 @@ export const previewProjectFunction = inngest.createFunction(
       await step.run("mark-idle-no-fragment", async () => {
         await prisma.project.update({
           where: { id: projectId },
-          data: { previewStatus: "IDLE", previewUrl: null, previewStartedAt: null },
+          data: { previewStatus: "IDLE", previewStartedAt: null },
         })
+
+        await prisma.preview.update({
+          where: { id: previewId },
+          data: { completed: true },
+        })
+
+        await publishFunction(
+          publish,
+          channel,
+          "preview",
+          { message: "No runnable fragment for project.", error: true, done: true },
+          streamId,
+        )
       })
       throw new Error("No runnable fragment for project")
     }
@@ -44,6 +93,13 @@ export const previewProjectFunction = inngest.createFunction(
     })
 
     await step.run("restore-frontend", async () => {
+      await publishFunction(
+        publish,
+        channel,
+        "preview",
+        { message: "Restoring the frontend state..." },
+        streamId,
+      )
       const sandbox = await getSandbox(sandboxId)
       const result = await sandbox.commands.run(
         `mkdir -p /home/user/frontend && curl -sL -o /tmp/frontend.tar.gz "${frontendStateUrl}" && tar -xzf /tmp/frontend.tar.gz -C /home/user/frontend && rm /tmp/frontend.tar.gz && cd /home/user/frontend && npm i`,
@@ -55,6 +111,13 @@ export const previewProjectFunction = inngest.createFunction(
     })
 
     await step.run("restore-backend", async () => {
+      await publishFunction(
+        publish,
+        channel,
+        "preview",
+        { message: "Restoring the backend state..." },
+        streamId,
+      )
       const sandbox = await getSandbox(sandboxId)
       const result = await sandbox.commands.run(
         `mkdir -p /home/user/backend && curl -sL -o /tmp/backend.tar.gz "${backendStateUrl}" && tar -xzf /tmp/backend.tar.gz -C /home/user/backend && rm /tmp/backend.tar.gz && cd /home/user/backend && npm i && npx prisma generate && npx prisma db push`,
@@ -83,6 +146,13 @@ export const previewProjectFunction = inngest.createFunction(
     })
 
     await step.run("start-backend", async () => {
+      await publishFunction(
+        publish,
+        channel,
+        "preview",
+        { message: "Starting the backend server..." },
+        streamId,
+      )
       const sandbox = await getSandbox(sandboxId)
       await sandbox.commands.run("cd /home/user/backend && npm run dev", {
         background: true,
@@ -92,6 +162,13 @@ export const previewProjectFunction = inngest.createFunction(
     })
 
     await step.run("start-frontend", async () => {
+      await publishFunction(
+        publish,
+        channel,
+        "preview",
+        { message: "Starting the frontend server..." },
+        streamId,
+      )
       const sandbox = await getSandbox(sandboxId)
       await sandbox.commands.run("cd /home/user/frontend && npm run dev", {
         background: true,
@@ -105,6 +182,20 @@ export const previewProjectFunction = inngest.createFunction(
         where: { id: projectId },
         data: { previewStatus: "RUNNING" },
       })
+
+      const finalPreview = await prisma.preview.update({
+        where: { id: previewId },
+        data: { url: frontendUrl, completed: true },
+        include: { stream: true },
+      })
+
+      await publishFunction(
+        publish,
+        channel,
+        "preview",
+        { preview: finalPreview as any, done: true },
+        streamId,
+      )
     })
 
     return { ok: true, frontendUrl, backendUrl }

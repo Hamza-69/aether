@@ -5,51 +5,46 @@ import { prisma } from "../lib/prisma"
 
 export const realtimeRouter: Router = express.Router()
 
+// Each job publishes on a deterministic (channel, topic) pair derived from
+// projectId. Clients only need to tell us which job stream they want.
+const STREAM_TYPES = {
+  "code-agent":        { channelPrefix: "project_code_agent",        topic: "ai" },
+  "deploy":            { channelPrefix: "project_deploy",            topic: "deploy" },
+  "export-apk":        { channelPrefix: "project_export_apk",        topic: "export-apk" },
+  "generate-keystore": { channelPrefix: "project_generate_keystore", topic: "generate-keystore" },
+  "preview":           { channelPrefix: "project_preview",           topic: "preview" },
+} as const
+
+type StreamType = keyof typeof STREAM_TYPES
+
 realtimeRouter.post("/", async (req, res): Promise<void> => {
-  const { StreamableId, type, channel, topic } = req.body
+  const { projectId, type } = req.body as { projectId?: string; type?: StreamType }
 
-  if (!StreamableId || !channel || !topic) {
-    res.status(400).json({ error: "Missing required fields: StreamableId, channel, topic" })
+  if (!projectId || !type) {
+    res.status(400).json({ error: "Missing required fields: projectId, type" })
     return
   }
 
-  let streamableExists = false
-
-  switch (type) {
-    case "project":
-      const project = await prisma.project.findUnique({ where: { id: StreamableId } })
-      streamableExists = !!project
-      break
-    case "apk":
-      const apk = await prisma.aPK.findUnique({ where: { id: StreamableId } })
-      streamableExists = !!apk
-      break
-    case "deployment":
-      const deployment = await prisma.deployment.findUnique({ where: { id: StreamableId } })
-      streamableExists = !!deployment
-      break
-    case "keystore":
-      const keystore = await prisma.keyStore.findUnique({ where: { id: StreamableId } })
-      streamableExists = !!keystore
-      break
-    case "message":
-      const message = await prisma.message.findUnique({ where: { id: StreamableId } })
-      streamableExists = !!message
-      break
-    default:
-      res.status(400).json({ error: "Invalid type. Must be one of: project, apk, deployment, keystore, message" })
-      return
-  }
-
-  if (!streamableExists) {
-    res.status(404).json({ error: "Streamable not found" })
+  const config = STREAM_TYPES[type]
+  if (!config) {
+    res.status(400).json({
+      error: `Invalid type. Must be one of: ${Object.keys(STREAM_TYPES).join(", ")}`,
+    })
     return
   }
+
+  const project = await prisma.project.findUnique({ where: { id: projectId } })
+  if (!project) {
+    res.status(404).json({ error: "Project not found" })
+    return
+  }
+
+  const channel = `${config.channelPrefix}:${projectId}`
 
   const token = await getSubscriptionToken(inngest, {
     channel,
-    topics: [topic],
+    topics: [config.topic],
   }) as any
 
-  res.status(200).json({ token })
+  res.status(200).json({ token, channel, topic: config.topic })
 })

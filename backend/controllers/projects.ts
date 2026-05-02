@@ -52,7 +52,6 @@ const startPreviewJob = async (projectId: string) => {
   await prisma.project.update({
     where: { id: projectId },
     data: {
-      previewUrl: url,
       previewStatus: "SCHEDULED",
       previewStartedAt: new Date(),
     },
@@ -156,20 +155,27 @@ projectsRouter.post("/:projectId/preview", async (req, res) => {
     const startedAt = project.previewStartedAt?.getTime() ?? 0
     const elapsedMin = (now - startedAt) / 60_000
 
-    if (project.previewStatus === "RUNNING" && project.previewUrl && elapsedMin <= RUNNING_MAX_MIN) {
-      const alive = await isSandboxUrlAlive(project.previewUrl)
+    const latestPreview = await prisma.preview.findFirst({
+      where: { projectId, url: { not: null } },
+      orderBy: { createdAt: "desc" },
+      select: { url: true },
+    })
+    const latestUrl = latestPreview?.url ?? null
+
+    if (project.previewStatus === "RUNNING" && latestUrl && elapsedMin <= RUNNING_MAX_MIN) {
+      const alive = await isSandboxUrlAlive(latestUrl)
       if (alive) {
-        res.status(200).json({ url: project.previewUrl, alreadyRunning: true })
+        res.status(200).json({ url: latestUrl, alreadyRunning: true })
         return
       }
     }
 
     if (
       project.previewStatus === "SCHEDULED" &&
-      project.previewUrl &&
+      latestUrl &&
       elapsedMin <= SCHEDULED_STUCK_MIN
     ) {
-      res.status(200).json({ url: project.previewUrl, scheduled: true })
+      res.status(200).json({ url: latestUrl, scheduled: true })
       return
     }
 

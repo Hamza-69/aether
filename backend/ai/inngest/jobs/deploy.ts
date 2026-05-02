@@ -1,7 +1,7 @@
 import { Sandbox } from "e2b"
 import { inngest } from "../client"
 import { prisma } from "../../../lib/prisma"
-import { getSandbox } from "../../../lib/utils"
+import { getSandbox, publish as publishFunction } from "../../../lib/utils"
 import {
   uploadState,
   getStateDownloadUrl,
@@ -61,6 +61,37 @@ export const deployProjectFunction = inngest.createFunction(
   { event: "deploy-project/run" },
   async ({ event, step, publish }: { event: any, step: any, publish: Function }) => {
     const { projectId } = event.data as { projectId: string }
+    const channel = "project_deploy:" + projectId
+
+    const { messageId, streamId } = await step.run("create-initial-message", async () => {
+      const created = await prisma.message.create({
+        data: {
+          projectId,
+          content: "",
+          role: "ASSISTANT",
+          type: "SUCCESS",
+        },
+      })
+
+      const stream = await prisma.stream.create({
+        data: { messageId: created.id },
+      })
+
+      const agentMessage = await prisma.message.findUnique({
+        where: { id: created.id },
+        include: { stream: true },
+      })
+
+      await publishFunction(
+        publish,
+        channel,
+        "deploy",
+        agentMessage as any,
+        stream.id,
+      )
+
+      return { messageId: created.id, streamId: stream.id }
+    })
 
     await step.run("mark-deployment-running", async () => {
       await prisma.project.update({
@@ -70,10 +101,18 @@ export const deployProjectFunction = inngest.createFunction(
           deploymentStartedAt: new Date(),
         },
       })
+
+      await publishFunction(
+        publish,
+        channel,
+        "deploy",
+        { message: "Starting deployment..." },
+        streamId,
+      )
     })
 
     try {
-      return await runDeployPipeline(projectId, step)
+      return await runDeployPipeline(projectId, step, publish, channel, messageId, streamId)
     } finally {
       // Always release the lock — success, thrown error, or retry exhaustion.
       // Inngest still records the failure in its run history.
@@ -90,8 +129,19 @@ export const deployProjectFunction = inngest.createFunction(
 const runDeployPipeline = async (
   projectId: string,
   step: Parameters<Parameters<typeof inngest.createFunction>[2]>[0]["step"],
+  publish: Function,
+  channel: string,
+  messageId: string,
+  streamId: string,
 ) => {
     const fragment = await step.run("get-latest-fragment", async () => {
+      await publishFunction(
+        publish,
+        channel,
+        "deploy",
+        { message: "Looking up the latest fragment to deploy..." },
+        streamId,
+      )
       const latest = await prisma.message.findFirst({
         where: {
           projectId,
@@ -112,6 +162,13 @@ const runDeployPipeline = async (
     }
 
     const SandboxId = await step.run("create-sandbox", async () => {
+      await publishFunction(
+        publish,
+        channel,
+        "deploy",
+        { message: "Spinning up a sandbox..." },
+        streamId,
+      )
       const sandbox = await Sandbox.create("coding-preview")
       await sandbox.setTimeout(60_000 * 10 * 3)
       return sandbox.sandboxId
@@ -122,6 +179,13 @@ const runDeployPipeline = async (
     })
 
     await step.run("restore-backend", async () => {
+      await publishFunction(
+        publish,
+        channel,
+        "deploy",
+        { message: "Restoring the backend state in the sandbox..." },
+        streamId,
+      )
       const sandbox = await getSandbox(SandboxId)
       try {
         await sandbox.commands.run(
@@ -137,6 +201,13 @@ const runDeployPipeline = async (
     })
 
     await step.run("run-deploy-script", async () => {
+      await publishFunction(
+        publish,
+        channel,
+        "deploy",
+        { message: "Running the deploy script on Fly..." },
+        streamId,
+      )
       const sandbox = await getSandbox(SandboxId)
       const flyToken = await loadFlyToken(projectId)
 
@@ -175,6 +246,13 @@ const runDeployPipeline = async (
     })
 
     await step.run("set-fly-secrets", async () => {
+      await publishFunction(
+        publish,
+        channel,
+        "deploy",
+        { message: "Pushing secrets to Fly..." },
+        streamId,
+      )
       const sandbox = await getSandbox(SandboxId)
       const projectSecrets = await resolveBackendSecretsFromExample(sandbox, projectId)
       const entries = Object.entries(projectSecrets).filter(
@@ -202,6 +280,13 @@ const runDeployPipeline = async (
     })
 
     const newBackendTarKey = await step.run("tar-and-upload-backend", async () => {
+      await publishFunction(
+        publish,
+        channel,
+        "deploy",
+        { message: "Saving the new backend state..." },
+        streamId,
+      )
       const sandbox = await getSandbox(SandboxId)
       try {
         await sandbox.commands.run(
@@ -232,15 +317,29 @@ const runDeployPipeline = async (
         },
       })
 
-      await prisma.message.create({
+      const finalMessage = await prisma.message.update({
+        where: { id: messageId },
         data: {
-          projectId,
           content: `Project deployed. Visit ${appInfo.url} to view it.`,
-          role: "ASSISTANT",
           type: "SUCCESS",
           fragmentId: newFragment.id,
+          completed: true,
         },
+        include: { fragment: true, stream: true },
       })
+
+      await prisma.stream.update({
+        where: { id: streamId },
+        data: { deploymentId: created.id },
+      })
+
+      await publishFunction(
+        publish,
+        channel,
+        "deploy",
+        { message: finalMessage as any, deployment: created as any, done: true },
+        streamId,
+      )
 
       return created
     })

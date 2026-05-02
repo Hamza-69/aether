@@ -1,7 +1,7 @@
 import { Sandbox } from "e2b"
 import { inngest } from "../client"
 import { prisma } from "../../../lib/prisma"
-import { getSandbox } from "../../../lib/utils"
+import { getSandbox, publish as publishFunction } from "../../../lib/utils"
 import { encrypt } from "../../../lib/encryption"
 
 type KeystoreSubjectOverrides = {
@@ -67,6 +67,40 @@ export const generateKeystoreFunction = inngest.createFunction(
       projectId: string
       subjectOverrides?: KeystoreSubjectOverrides
     }
+    const channel = "project_generate_keystore:" + projectId
+
+    const { keystoreId, streamId } = await step.run("create-incomplete-keystore", async () => {
+      const keystore = await prisma.keyStore.upsert({
+        where: { projectId },
+        create: { projectId, password: null, data: null, completed: false },
+        update: { password: null, data: null, completed: false },
+      })
+
+      // Stream.keystoreId is @unique, so a regenerate run must drop the
+      // previous run's stream before linking a fresh one.
+      await prisma.stream.deleteMany({ where: { keystoreId: keystore.id } })
+
+      // Each generation run gets a fresh Stream; the keystore row is the
+      // stable per-project identifier, the stream is the per-run channel.
+      const stream = await prisma.stream.create({
+        data: { keystoreId: keystore.id },
+      })
+
+      const initialKeystore = await prisma.keyStore.findUnique({
+        where: { id: keystore.id },
+        include: { stream: true },
+      })
+
+      await publishFunction(
+        publish,
+        channel,
+        "generate-keystore",
+        initialKeystore as any,
+        stream.id,
+      )
+
+      return { keystoreId: keystore.id, streamId: stream.id }
+    })
 
     await step.run("mark-keystore-running", async () => {
       await prisma.project.update({
@@ -79,7 +113,7 @@ export const generateKeystoreFunction = inngest.createFunction(
     })
 
     try {
-      return await runGenerateKeystorePipeline(projectId, subjectOverrides, step)
+      return await runGenerateKeystorePipeline(projectId, subjectOverrides, step, publish, channel, keystoreId, streamId)
     } finally {
       await step.run("release-keystore-lock", async () => {
         await prisma.project.update({
@@ -95,8 +129,19 @@ const runGenerateKeystorePipeline = async (
   projectId: string,
   subjectOverrides: KeystoreSubjectOverrides | undefined,
   step: Parameters<Parameters<typeof inngest.createFunction>[2]>[0]["step"],
+  publish: Function,
+  channel: string,
+  keystoreId: string,
+  streamId: string,
 ) => {
   const sandboxId = await step.run("create-sandbox", async () => {
+    await publishFunction(
+      publish,
+      channel,
+      "generate-keystore",
+      { message: "Spinning up the keystore sandbox..." },
+      streamId,
+    )
     const sandbox = await Sandbox.create("generate-keystore")
     await sandbox.setTimeout(60_000 * 5)
     return sandbox.sandboxId
@@ -105,6 +150,13 @@ const runGenerateKeystorePipeline = async (
   // Password is generated, used, and encrypted inline inside a single step.
   // It's never returned from a step so it doesn't leak into Inngest run logs.
   await step.run("generate-and-store-keystore", async () => {
+    await publishFunction(
+      publish,
+      channel,
+      "generate-keystore",
+      { message: "Generating keystore and password..." },
+      streamId,
+    )
     const sandbox = await getSandbox(sandboxId)
     const project = await prisma.project.findUnique({
       where: { id: projectId },
@@ -145,20 +197,30 @@ const runGenerateKeystorePipeline = async (
     const dataBytes = new Uint8Array(new ArrayBuffer(keystoreBuf.length))
     dataBytes.set(keystoreBuf)
 
-    await prisma.keyStore.upsert({
-      where: { projectId },
-      create: {
-        projectId,
+    await prisma.keyStore.update({
+      where: { id: keystoreId },
+      data: {
         password: passwordBytes,
         data: dataBytes,
-      },
-      update: {
-        password: passwordBytes,
-        data: dataBytes,
+        completed: true,
       },
     })
-
   })
 
-  return { ok: true }
+  await step.run("publish-keystore-done", async () => {
+    const finalKeystore = await prisma.keyStore.findUnique({
+      where: { id: keystoreId },
+      include: { stream: true },
+    })
+
+    await publishFunction(
+      publish,
+      channel,
+      "generate-keystore",
+      { keystore: finalKeystore as any, done: true },
+      streamId,
+    )
+  })
+
+  return { ok: true, keystoreId }
 }
