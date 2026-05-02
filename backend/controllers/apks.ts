@@ -107,6 +107,12 @@ export const exportApkHandler = async (req: Request, res: Response) => {
       } else {
         hasExpoSecret = true
       }
+    } else {
+      const expoUserSecret = await prisma.userSecret.findUnique({
+        where: { userId_name: { userId: req.user!.id, name: EXPO_SECRET_NAME } },
+        select: { id: true },
+      })
+      hasExpoSecret = !!expoUserSecret
     }
 
     if (!hasExpoSecret) {

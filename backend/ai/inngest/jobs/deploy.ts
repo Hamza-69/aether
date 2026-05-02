@@ -46,10 +46,9 @@ const loadFlyToken = async (projectId: string): Promise<string> => {
     where: { projectId_name: { projectId, name: FLY_SECRET_NAME } },
     select: { encryptedValue: true, useUserSecret: true },
   })
-  if (!row) throw new Error(`${FLY_SECRET_NAME} not set for project`)
   
-  let encryptedValue = row.encryptedValue
-  if (row.useUserSecret) {
+  let encryptedValue = row?.encryptedValue
+  if (!row || row.useUserSecret) {
     const project = await prisma.project.findUnique({ where: { id: projectId }, select: { userId: true } })
     const userRow = await prisma.userSecret.findUnique({
       where: { userId_name: { userId: project!.userId, name: FLY_SECRET_NAME } },

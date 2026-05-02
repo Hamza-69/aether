@@ -55,6 +55,12 @@ export const deployProjectHandler = async (req: Request, res: Response) => {
       } else {
         hasFlySecret = true
       }
+    } else {
+      const flyUserSecret = await prisma.userSecret.findUnique({
+        where: { userId_name: { userId: req.user!.id, name: FLY_SECRET_NAME } },
+        select: { id: true },
+      })
+      hasFlySecret = !!flyUserSecret
     }
 
     if (!hasFlySecret) {
