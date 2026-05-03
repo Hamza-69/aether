@@ -17,7 +17,11 @@ import lb.edu.aub.cmps279spring26.amm125.aether.model.RealtimeTokenRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.RealtimeTokenResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.ResetPasswordRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.SendMessageRequest;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretsResponse;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretsWriteResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.SignupRequest;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.UpsertProjectSecretsRequest;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.UpsertUserSecretsRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.VerificationRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.VerificationStartResponse;
 import retrofit2.Call;
@@ -87,6 +91,12 @@ public interface ApiService {
     @POST("projects/{projectId}/preview/restart")
     Call<ActionResponse> restartPreview(@Path("projectId") String projectId);
 
+    @POST("projects/{projectId}/publish")
+    Call<ActionResponse> publishProject(@Path("projectId") String projectId);
+
+    @POST("projects/{projectId}/unpublish")
+    Call<ActionResponse> unpublishProject(@Path("projectId") String projectId);
+
     @GET("auth/me")
     Call<CurrentUserResponse> getCurrentUser();
 
@@ -95,4 +105,22 @@ public interface ApiService {
 
     @DELETE("auth/me/profile-picture")
     Call<ActionResponse> deleteProfilePicture();
+
+    @GET("secrets")
+    Call<SecretsResponse> getUserSecrets();
+
+    @POST("secrets")
+    Call<SecretsWriteResponse> upsertUserSecrets(@Body UpsertUserSecretsRequest request);
+
+    @DELETE("secrets/{name}")
+    Call<Void> deleteUserSecret(@Path("name") String name);
+
+    @GET("projects/{projectId}/secrets")
+    Call<SecretsResponse> getProjectSecrets(@Path("projectId") String projectId);
+
+    @POST("projects/{projectId}/secrets")
+    Call<SecretsWriteResponse> upsertProjectSecrets(@Path("projectId") String projectId, @Body UpsertProjectSecretsRequest request);
+
+    @DELETE("projects/{projectId}/secrets/{name}")
+    Call<Void> deleteProjectSecret(@Path("projectId") String projectId, @Path("name") String name);
 }

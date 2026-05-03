@@ -90,8 +90,9 @@ discoverRouter.post("/:id/clone", async (req, res) => {
     // Create a new project for the user
     const newProject = await prisma.project.create({
       data: {
-        name: `Clone of ${publishedProject.name}`,
+        name: publishedProject.name,
         userId,
+        screenshotUrl: publishedProject.screenshotUrl,
       },
     })
 

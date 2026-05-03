@@ -2,7 +2,7 @@ import { Router } from "express"
 import { Sandbox } from "e2b"
 import { prisma } from "../lib/prisma"
 import { inngest } from "../ai/inngest/client"
-import { CreateProjectBodySchema } from "../models"
+import { CreateProjectBodySchema, RenameProjectBodySchema } from "../models"
 import { secretsRouter } from "./secrets"
 import { deploymentsRouter, deployProjectHandler } from "./deployments"
 import { keystoresRouter, generateKeystoreHandler } from "./keystores"
@@ -107,6 +107,34 @@ projectsRouter.get("/:projectId", async (req, res) => {
   } catch (error) {
     console.error("[projectsRouter.GET /:projectId] Failed:", error)
     res.status(500).json({ error: "Failed to fetch project" })
+  }
+})
+
+// PATCH /api/projects/:projectId — rename a project
+projectsRouter.patch("/:projectId", async (req, res) => {
+  const { projectId } = req.params as { projectId: string }
+  const parsed = RenameProjectBodySchema.safeParse(req.body)
+
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" })
+    return
+  }
+
+  const project = await ensureProjectOwnership(projectId, req.user!.id)
+  if (!project) {
+    res.status(404).json({ error: "Project not found" })
+    return
+  }
+
+  try {
+    const updated = await prisma.project.update({
+      where: { id: projectId },
+      data: { name: parsed.data.name },
+    })
+    res.status(200).json({ project: updated })
+  } catch (error) {
+    console.error("[projectsRouter.PATCH /:projectId] Failed:", error)
+    res.status(500).json({ error: "Failed to rename project" })
   }
 })
 

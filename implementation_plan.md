@@ -18,6 +18,9 @@ Align the Android frontend with the current backend APIs for projects, discover,
   - `POST /api/projects/{projectId}/export-apk`
   - `POST /api/projects/{projectId}/preview`
   - `POST /api/projects/{projectId}/preview/restart`
+- Publish lifecycle:
+  - `POST /api/projects/{projectId}/publish`
+  - `POST /api/projects/{projectId}/unpublish`
 - Project image source: use backend `project.screenshotUrl`; fallback to initials avatar when absent.
 
 ## Current State Snapshot
@@ -59,11 +62,13 @@ Align the Android frontend with the current backend APIs for projects, discover,
 4. Auto-reconnect by fetching a new token when connection closes/fails (token lifetime is short).
 5. Deliver events into UI through listener callbacks or LiveData bridge.
 
-### Progress Notes (Resumed)
+### Progress Notes (Finalized)
 
-1. Completed API expansion for project/discover/messages/realtime/job/profile-picture flows, plus required DTOs.
-2. Completed backend data wiring for Home, Discover, clone action, and Chat message history/send.
-3. Realtime websocket stream and secrets management remain pending.
+1. API expansion completed for project/discover/messages/realtime/job/profile-picture/secrets plus publish/unpublish flows, with required DTOs.
+2. Core screens are wired to backend data for Home, Discover, clone action, and Chat history/send.
+3. Realtime websocket stream is integrated with token refresh reconnect and job-event UI surfacing.
+4. Account/project secrets are implemented with AES-GCM encryption and `useUserSecret` handling.
+5. Publish/update/unpublish actions now call backend endpoints to keep Discover state consistent.
 
 ### 4. Background Jobs in Chat UI
 

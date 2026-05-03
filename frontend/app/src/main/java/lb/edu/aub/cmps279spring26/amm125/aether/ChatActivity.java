@@ -1,5 +1,6 @@
 package lb.edu.aub.cmps279spring26.amm125.aether;
 
+import android.app.AlertDialog;
 import android.app.Dialog;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
@@ -10,6 +11,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -25,9 +27,14 @@ import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.snackbar.BaseTransientBottomBar;
 import com.google.android.material.snackbar.Snackbar;
 
+import org.json.JSONObject;
+
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiClient;
 import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiService;
@@ -35,12 +42,24 @@ import lb.edu.aub.cmps279spring26.amm125.aether.model.ActionResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.GenerateKeystoreRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.MessagesResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.ProjectMessage;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretSummary;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretsResponse;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretsWriteResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.SendMessageRequest;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.UpsertProjectSecretEntry;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.UpsertProjectSecretsRequest;
+import lb.edu.aub.cmps279spring26.amm125.aether.realtime.RealtimeClient;
+import lb.edu.aub.cmps279spring26.amm125.aether.utils.SecretCryptoUtil;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 
 public class ChatActivity extends AppCompatActivity {
+    private static final String STREAM_CODE_AGENT = "code-agent";
+    private static final String STREAM_DEPLOY = "deploy";
+    private static final String STREAM_EXPORT_APK = "export-apk";
+    private static final String STREAM_GENERATE_KEYSTORE = "generate-keystore";
+    private static final String STREAM_PREVIEW = "preview";
 
     private RecyclerView rvChat;
     private ChatAdapter adapter;
@@ -57,6 +76,7 @@ public class ChatActivity extends AppCompatActivity {
     private Project currentProject;
     private int projectIndex = -1;
     private final ApiService apiService = ApiClient.getApiService();
+    private final Map<String, RealtimeClient> realtimeClients = new HashMap<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -115,10 +135,93 @@ public class ChatActivity extends AppCompatActivity {
 
         if (!TextUtils.isEmpty(projectId)) {
             loadMessages();
+            startRealtimeStreams();
         } else if (!TextUtils.isEmpty(projectDesc)) {
             messageList.add(new ChatMessage(projectDesc, true));
             adapter.notifyItemInserted(messageList.size() - 1);
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        for (RealtimeClient client : realtimeClients.values()) {
+            client.disconnect();
+        }
+        realtimeClients.clear();
+    }
+
+    private void startRealtimeStreams() {
+        connectRealtimeForType(STREAM_CODE_AGENT);
+        connectRealtimeForType(STREAM_DEPLOY);
+        connectRealtimeForType(STREAM_EXPORT_APK);
+        connectRealtimeForType(STREAM_GENERATE_KEYSTORE);
+        connectRealtimeForType(STREAM_PREVIEW);
+    }
+
+    private void connectRealtimeForType(String streamType) {
+        if (TextUtils.isEmpty(projectId) || realtimeClients.containsKey(streamType)) {
+            return;
+        }
+        RealtimeClient client = new RealtimeClient(apiService, new RealtimeClient.Listener() {
+            @Override
+            public void onData(String type, JSONObject payload) {
+                handleRealtimePayload(type, payload);
+            }
+
+            @Override
+            public void onStatus(String type, String status) {
+                if ("failed".equalsIgnoreCase(status)) {
+                    showInfoSnackbar("Realtime disconnected for " + formatStreamLabel(type));
+                }
+            }
+
+            @Override
+            public void onError(String type, String errorMessage) {
+                showInfoSnackbar(formatStreamLabel(type) + ": " + errorMessage);
+            }
+        });
+        realtimeClients.put(streamType, client);
+        client.connect(projectId, streamType);
+    }
+
+    private void handleRealtimePayload(String streamType, JSONObject payload) {
+        String message = payload.optString("message", "");
+        boolean done = payload.optBoolean("done", false);
+        boolean error = payload.optBoolean("error", false);
+
+        if (!TextUtils.isEmpty(message)) {
+            appendSystemMessage("[" + formatStreamLabel(streamType) + "] " + message);
+        }
+        if (error) {
+            showInfoSnackbar(formatStreamLabel(streamType) + " failed");
+        }
+
+        if (STREAM_PREVIEW.equals(streamType)) {
+            JSONObject preview = payload.optJSONObject("preview");
+            if (preview != null) {
+                String previewUrl = preview.optString("url", "");
+                if (!TextUtils.isEmpty(previewUrl)) {
+                    showSuccessSnackbar("Preview ready\n" + previewUrl);
+                    projectStatus = "Published";
+                    updateStatusUI();
+                }
+            }
+        }
+
+        if (done && STREAM_CODE_AGENT.equals(streamType)) {
+            loadMessages();
+        }
+    }
+
+    private String formatStreamLabel(String streamType) {
+        return streamType.replace("-", " ").toUpperCase(Locale.US);
+    }
+
+    private void appendSystemMessage(String text) {
+        messageList.add(new ChatMessage(text, false));
+        adapter.notifyItemInserted(messageList.size() - 1);
+        rvChat.scrollToPosition(messageList.size() - 1);
     }
 
     private void loadMessages() {
@@ -190,9 +293,9 @@ public class ChatActivity extends AppCompatActivity {
         LinearLayout optPreview = dialog.findViewById(R.id.optionPublish);
         LinearLayout optPreviewRestart = dialog.findViewById(R.id.optionUpdate);
         LinearLayout optExport = dialog.findViewById(R.id.optionExport);
+        LinearLayout optSecrets = dialog.findViewById(R.id.optionSecrets);
         LinearLayout optDelete = dialog.findViewById(R.id.optionDelete);
-
-        optUpdateVisible(optPreviewRestart);
+        optUpdateVisible(optPreviewRestart, true);
 
         optDeploy.setOnClickListener(view -> {
             dialog.dismiss();
@@ -200,6 +303,7 @@ public class ChatActivity extends AppCompatActivity {
                 showInfoSnackbar("This project is not linked to backend yet");
                 return;
             }
+            connectRealtimeForType(STREAM_DEPLOY);
             triggerAction("Deploy scheduled", apiService.deployProject(projectId));
         });
 
@@ -209,6 +313,7 @@ public class ChatActivity extends AppCompatActivity {
                 showInfoSnackbar("This project is not linked to backend yet");
                 return;
             }
+            connectRealtimeForType(STREAM_GENERATE_KEYSTORE);
             triggerAction(
                     "Keystore generation triggered",
                     apiService.generateKeystore(projectId, new GenerateKeystoreRequest(Collections.emptyMap()))
@@ -221,6 +326,7 @@ public class ChatActivity extends AppCompatActivity {
                 showInfoSnackbar("This project is not linked to backend yet");
                 return;
             }
+            connectRealtimeForType(STREAM_PREVIEW);
             triggerAction("Preview requested", apiService.runPreview(projectId));
             showViewMode();
         });
@@ -231,6 +337,7 @@ public class ChatActivity extends AppCompatActivity {
                 showInfoSnackbar("This project is not linked to backend yet");
                 return;
             }
+            connectRealtimeForType(STREAM_PREVIEW);
             triggerAction("Preview restart requested", apiService.restartPreview(projectId));
             showViewMode();
         });
@@ -241,8 +348,16 @@ public class ChatActivity extends AppCompatActivity {
                 showInfoSnackbar("This project is not linked to backend yet");
                 return;
             }
+            connectRealtimeForType(STREAM_EXPORT_APK);
             triggerAction("APK export requested", apiService.exportApk(projectId));
         });
+
+        if (optSecrets != null) {
+            optSecrets.setOnClickListener(view -> {
+                dialog.dismiss();
+                showProjectSecretsDialog();
+            });
+        }
 
         optDelete.setOnClickListener(view -> {
             dialog.dismiss();
@@ -252,17 +367,173 @@ public class ChatActivity extends AppCompatActivity {
         dialog.show();
     }
 
-    private void optUpdateVisible(LinearLayout optPreviewRestart) {
+    private void showProjectSecretsDialog() {
+        if (TextUtils.isEmpty(projectId)) {
+            showInfoSnackbar("This project is not linked to backend yet");
+            return;
+        }
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(16);
+        root.setPadding(pad, pad, pad, 0);
+
+        EditText etName = new EditText(this);
+        etName.setHint("Secret name (UPPER_SNAKE_CASE)");
+        root.addView(etName);
+
+        EditText etValue = new EditText(this);
+        etValue.setHint("Secret value");
+        root.addView(etValue);
+
+        CheckBox cbUseAccountSecret = new CheckBox(this);
+        cbUseAccountSecret.setText("Use matching account secret");
+        root.addView(cbUseAccountSecret);
+
+        TextView tvSecrets = new TextView(this);
+        tvSecrets.setPadding(0, dp(12), 0, dp(8));
+        root.addView(tvSecrets);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Project Secrets")
+                .setView(root)
+                .setPositiveButton("Save", null)
+                .setNegativeButton("Delete", null)
+                .setNeutralButton("Refresh", null)
+                .create();
+        dialog.setOnShowListener(d -> {
+            loadProjectSecretsInto(tvSecrets);
+
+            Button save = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            Button delete = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+            Button refresh = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
+
+            save.setOnClickListener(v -> {
+                String name = etName.getText().toString().trim().toUpperCase(Locale.US);
+                String value = etValue.getText().toString();
+                boolean useAccountSecret = cbUseAccountSecret.isChecked();
+
+                if (!name.matches("^[A-Z_][A-Z0-9_]*$")) {
+                    showInfoSnackbar("Secret name must be UPPER_SNAKE_CASE");
+                    return;
+                }
+                if (!useAccountSecret && TextUtils.isEmpty(value)) {
+                    showInfoSnackbar("Secret value is required");
+                    return;
+                }
+
+                String encryptedValue = null;
+                if (!useAccountSecret) {
+                    try {
+                        encryptedValue = SecretCryptoUtil.encryptForServer(value);
+                    } catch (IllegalStateException e) {
+                        showInfoSnackbar("Invalid CLIENT_SECRET_KEY configuration");
+                        return;
+                    }
+                }
+
+                UpsertProjectSecretEntry entry = new UpsertProjectSecretEntry(name, encryptedValue, useAccountSecret);
+                apiService.upsertProjectSecrets(projectId, new UpsertProjectSecretsRequest(Collections.singletonList(entry)))
+                        .enqueue(new Callback<SecretsWriteResponse>() {
+                            @Override
+                            public void onResponse(Call<SecretsWriteResponse> call, Response<SecretsWriteResponse> response) {
+                                if (!response.isSuccessful()) {
+                                    showInfoSnackbar("Failed to save project secret");
+                                    return;
+                                }
+                                showSuccessSnackbar("Project secret saved");
+                                loadProjectSecretsInto(tvSecrets);
+                            }
+
+                            @Override
+                            public void onFailure(Call<SecretsWriteResponse> call, Throwable t) {
+                                showInfoSnackbar("Could not reach backend");
+                            }
+                        });
+            });
+
+            delete.setOnClickListener(v -> {
+                String name = etName.getText().toString().trim().toUpperCase(Locale.US);
+                if (!name.matches("^[A-Z_][A-Z0-9_]*$")) {
+                    showInfoSnackbar("Enter a valid secret name to delete");
+                    return;
+                }
+                apiService.deleteProjectSecret(projectId, name).enqueue(new Callback<Void>() {
+                    @Override
+                    public void onResponse(Call<Void> call, Response<Void> response) {
+                        if (!response.isSuccessful()) {
+                            showInfoSnackbar("Failed to delete project secret");
+                            return;
+                        }
+                        showSuccessSnackbar("Project secret deleted");
+                        loadProjectSecretsInto(tvSecrets);
+                    }
+
+                    @Override
+                    public void onFailure(Call<Void> call, Throwable t) {
+                        showInfoSnackbar("Could not reach backend");
+                    }
+                });
+            });
+
+            refresh.setOnClickListener(v -> loadProjectSecretsInto(tvSecrets));
+        });
+        dialog.show();
+    }
+
+    private void loadProjectSecretsInto(TextView target) {
+        apiService.getProjectSecrets(projectId).enqueue(new Callback<SecretsResponse>() {
+            @Override
+            public void onResponse(Call<SecretsResponse> call, Response<SecretsResponse> response) {
+                if (!response.isSuccessful() || response.body() == null || response.body().getSecrets() == null) {
+                    target.setText("Could not load secrets.");
+                    return;
+                }
+                List<SecretSummary> secrets = response.body().getSecrets();
+                if (secrets.isEmpty()) {
+                    target.setText("No project secrets.");
+                    return;
+                }
+                StringBuilder sb = new StringBuilder("Current project secrets:\n");
+                for (SecretSummary secret : secrets) {
+                    sb.append("• ").append(secret.getName());
+                    if (Boolean.TRUE.equals(secret.getUseUserSecret())) {
+                        sb.append(" (uses account secret)");
+                    }
+                    sb.append('\n');
+                }
+                target.setText(sb.toString().trim());
+            }
+
+            @Override
+            public void onFailure(Call<SecretsResponse> call, Throwable t) {
+                target.setText("Could not reach backend.");
+            }
+        });
+    }
+
+    private int dp(int value) {
+        return Math.round(getResources().getDisplayMetrics().density * value);
+    }
+
+    private void optUpdateVisible(LinearLayout optPreviewRestart, boolean isVisible) {
         if (optPreviewRestart != null) {
-            optPreviewRestart.setVisibility(View.VISIBLE);
+            optPreviewRestart.setVisibility(isVisible ? View.VISIBLE : View.GONE);
         }
     }
 
     private void triggerAction(String successMessage, Call<ActionResponse> call) {
+        triggerAction(successMessage, call, null);
+    }
+
+    private void triggerAction(String successMessage, Call<ActionResponse> call, Runnable onSuccess) {
         call.enqueue(new Callback<ActionResponse>() {
             @Override
             public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
                 if (response.isSuccessful()) {
+                    if (onSuccess != null) {
+                        onSuccess.run();
+                    }
                     ActionResponse body = response.body();
                     if (body != null && body.getUrl() != null && !body.getUrl().trim().isEmpty()) {
                         showSuccessSnackbar(successMessage + "\n" + body.getUrl());
@@ -360,6 +631,7 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
+        connectRealtimeForType(STREAM_CODE_AGENT);
         apiService.sendProjectMessage(projectId, new SendMessageRequest(text)).enqueue(new Callback<ActionResponse>() {
             @Override
             public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {

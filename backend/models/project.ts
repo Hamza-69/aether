@@ -19,6 +19,12 @@ export const CreateProjectBodySchema = z
   })
   .openapi("CreateProjectBody")
 
+export const RenameProjectBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).openapi({ example: "my-renamed-app" }),
+  })
+  .openapi("RenameProjectBody")
+
 export const ProjectPreviewSchema = z
   .object({
     url: z.string().url().openapi({ example: "https://8081-123.e2b.app" }),
