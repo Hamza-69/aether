@@ -7,22 +7,38 @@ import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
-import android.view.Window;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
+
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.snackbar.BaseTransientBottomBar;
 import com.google.android.material.snackbar.Snackbar;
+
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+
+import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiClient;
+import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiService;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.ActionResponse;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.GenerateKeystoreRequest;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.MessagesResponse;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.ProjectMessage;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.SendMessageRequest;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 public class ChatActivity extends AppCompatActivity {
 
@@ -37,8 +53,10 @@ public class ChatActivity extends AppCompatActivity {
     private String projectTitle;
     private String projectDesc;
     private String projectStatus;
+    private String projectId;
     private Project currentProject;
     private int projectIndex = -1;
+    private final ApiService apiService = ApiClient.getApiService();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,13 +66,17 @@ public class ChatActivity extends AppCompatActivity {
         projectTitle = getIntent().getStringExtra("PROJECT_TITLE");
         projectDesc = getIntent().getStringExtra("PROJECT_DESC");
         projectStatus = getIntent().getStringExtra("PROJECT_STATUS");
+        projectId = getIntent().getStringExtra("PROJECT_ID");
         projectIndex = getIntent().getIntExtra("PROJECT_INDEX", -1);
-        
+
         if (projectIndex != -1 && projectIndex < HomeActivity.userProjects.size()) {
             currentProject = HomeActivity.userProjects.get(projectIndex);
+            if (projectId == null || projectId.trim().isEmpty()) {
+                projectId = currentProject.getBackendId();
+            }
         }
 
-        if (projectTitle == null) projectTitle = "New Project";
+        if (projectTitle == null) projectTitle = "Project";
         if (projectStatus == null) projectStatus = "Not Published";
 
         TextView tvTitle = findViewById(R.id.tvChatTitle);
@@ -84,26 +106,45 @@ public class ChatActivity extends AppCompatActivity {
         btnChatToggle.setOnClickListener(v -> showChatMode());
         btnViewToggle.setOnClickListener(v -> showViewMode());
 
-        if (!TextUtils.isEmpty(projectDesc)) {
-            messageList.add(new ChatMessage(projectDesc, true));
-            adapter.notifyItemInserted(0);
-            
-            rvChat.postDelayed(() -> {
-                String aiResponse = "I'll create a " + projectTitle + " app for you! It will include:\n\n" +
-                        "• Features based on: " + projectDesc + "\n" +
-                        "• Modern UI components\n" +
-                        "• Intuitive navigation\n\n" +
-                        "Let me build this for you...";
-                messageList.add(new ChatMessage(aiResponse, false));
-                adapter.notifyItemInserted(messageList.size() - 1);
-                rvChat.scrollToPosition(messageList.size() - 1);
-            }, 800);
-        }
-
         btnSend.setOnClickListener(v -> {
             String text = etMessage.getText().toString().trim();
             if (!TextUtils.isEmpty(text)) {
                 sendMessage(text);
+            }
+        });
+
+        if (!TextUtils.isEmpty(projectId)) {
+            loadMessages();
+        } else if (!TextUtils.isEmpty(projectDesc)) {
+            messageList.add(new ChatMessage(projectDesc, true));
+            adapter.notifyItemInserted(messageList.size() - 1);
+        }
+    }
+
+    private void loadMessages() {
+        apiService.getProjectMessages(projectId).enqueue(new Callback<MessagesResponse>() {
+            @Override
+            public void onResponse(Call<MessagesResponse> call, Response<MessagesResponse> response) {
+                if (!response.isSuccessful() || response.body() == null || response.body().getMessages() == null) {
+                    showInfoSnackbar("Failed to load messages");
+                    return;
+                }
+                List<ProjectMessage> backendMessages = response.body().getMessages();
+                messageList.clear();
+                for (ProjectMessage m : backendMessages) {
+                    if (m.getContent() == null || m.getContent().trim().isEmpty()) continue;
+                    boolean isUser = "USER".equalsIgnoreCase(m.getRole());
+                    messageList.add(new ChatMessage(m.getContent(), isUser));
+                }
+                adapter.notifyDataSetChanged();
+                if (!messageList.isEmpty()) {
+                    rvChat.scrollToPosition(messageList.size() - 1);
+                }
+            }
+
+            @Override
+            public void onFailure(Call<MessagesResponse> call, Throwable t) {
+                showInfoSnackbar("Could not reach backend");
             }
         });
     }
@@ -111,14 +152,14 @@ public class ChatActivity extends AppCompatActivity {
     private void updateStatusUI() {
         TextView tvStatus = findViewById(R.id.tvChatStatus);
         tvStatus.setText(projectStatus);
-        
+
         MaterialCardView statusBadge = findViewById(R.id.statusBadgeCard);
         if ("Published".equalsIgnoreCase(projectStatus)) {
-            statusBadge.setCardBackgroundColor(0xFF00BFA5); // Green
+            statusBadge.setCardBackgroundColor(0xFF00BFA5);
         } else {
-            statusBadge.setCardBackgroundColor(0xFFFFB300); // Orange
+            statusBadge.setCardBackgroundColor(0xFFFFB300);
         }
-        
+
         if (currentProject != null) {
             currentProject.setStatus(projectStatus);
         }
@@ -132,73 +173,75 @@ public class ChatActivity extends AppCompatActivity {
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             dialog.getWindow().setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            
+
             Window window = dialog.getWindow();
             window.setGravity(Gravity.TOP | Gravity.END);
-            
+
             android.view.WindowManager.LayoutParams params = window.getAttributes();
-            params.x = 20; 
-            params.y = 120; 
+            params.x = 20;
+            params.y = 120;
             window.setAttributes(params);
-            
+
             window.setWindowAnimations(android.R.style.Animation_Dialog);
         }
 
         LinearLayout optDeploy = dialog.findViewById(R.id.optionDeploy);
-        LinearLayout optRename = dialog.findViewById(R.id.optionRename);
-        LinearLayout optPublish = dialog.findViewById(R.id.optionPublish);
-        LinearLayout optUpdate = dialog.findViewById(R.id.optionUpdate);
+        LinearLayout optKeystore = dialog.findViewById(R.id.optionRename);
+        LinearLayout optPreview = dialog.findViewById(R.id.optionPublish);
+        LinearLayout optPreviewRestart = dialog.findViewById(R.id.optionUpdate);
         LinearLayout optExport = dialog.findViewById(R.id.optionExport);
         LinearLayout optDelete = dialog.findViewById(R.id.optionDelete);
-        
-        ImageView ivPublishIcon = dialog.findViewById(R.id.ivPublishIcon);
-        TextView tvPublishText = dialog.findViewById(R.id.tvPublishText);
 
-        boolean isPublished = "Published".equalsIgnoreCase(projectStatus);
-        
-        if (isPublished) {
-            tvPublishText.setText("Unpublish");
-            ivPublishIcon.setImageResource(R.drawable.ic_back);
-            ivPublishIcon.setImageTintList(android.content.res.ColorStateList.valueOf(Color.GRAY));
-            
-            if (currentProject != null && currentProject.hasUnpublishedChanges()) {
-                optUpdate.setVisibility(View.VISIBLE);
-            }
-        } else {
-            tvPublishText.setText("Publish");
-            ivPublishIcon.setImageResource(R.drawable.ic_sparkle);
-            ivPublishIcon.setImageTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#00BFA5")));
-        }
+        optUpdateVisible(optPreviewRestart);
 
         optDeploy.setOnClickListener(view -> {
-            showViewMode();
-            showSuccessSnackbar("Deploying application preview...");
             dialog.dismiss();
-        });
-
-        optRename.setOnClickListener(view -> {
-            dialog.dismiss();
-            showRenameDialog();
-        });
-
-        optPublish.setOnClickListener(view -> {
-            if (isPublished) {
-                unpublishProject();
-                dialog.dismiss();
-            } else {
-                dialog.dismiss();
-                showPublishCategoryDialog(false);
+            if (TextUtils.isEmpty(projectId)) {
+                showInfoSnackbar("This project is not linked to backend yet");
+                return;
             }
+            triggerAction("Deploy scheduled", apiService.deployProject(projectId));
         });
 
-        optUpdate.setOnClickListener(view -> {
+        optKeystore.setOnClickListener(view -> {
             dialog.dismiss();
-            showPublishCategoryDialog(true);
+            if (TextUtils.isEmpty(projectId)) {
+                showInfoSnackbar("This project is not linked to backend yet");
+                return;
+            }
+            triggerAction(
+                    "Keystore generation triggered",
+                    apiService.generateKeystore(projectId, new GenerateKeystoreRequest(Collections.emptyMap()))
+            );
+        });
+
+        optPreview.setOnClickListener(view -> {
+            dialog.dismiss();
+            if (TextUtils.isEmpty(projectId)) {
+                showInfoSnackbar("This project is not linked to backend yet");
+                return;
+            }
+            triggerAction("Preview requested", apiService.runPreview(projectId));
+            showViewMode();
+        });
+
+        optPreviewRestart.setOnClickListener(view -> {
+            dialog.dismiss();
+            if (TextUtils.isEmpty(projectId)) {
+                showInfoSnackbar("This project is not linked to backend yet");
+                return;
+            }
+            triggerAction("Preview restart requested", apiService.restartPreview(projectId));
+            showViewMode();
         });
 
         optExport.setOnClickListener(view -> {
-            showInfoSnackbar("Preparing APK for export...");
             dialog.dismiss();
+            if (TextUtils.isEmpty(projectId)) {
+                showInfoSnackbar("This project is not linked to backend yet");
+                return;
+            }
+            triggerAction("APK export requested", apiService.exportApk(projectId));
         });
 
         optDelete.setOnClickListener(view -> {
@@ -209,141 +252,33 @@ public class ChatActivity extends AppCompatActivity {
         dialog.show();
     }
 
-    private void showRenameDialog() {
-        final Dialog dialog = new Dialog(this);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setContentView(R.layout.dialog_create_project);
-
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    private void optUpdateVisible(LinearLayout optPreviewRestart) {
+        if (optPreviewRestart != null) {
+            optPreviewRestart.setVisibility(View.VISIBLE);
         }
+    }
 
-        TextView tvTitle = dialog.findViewById(R.id.tvTitle);
-        if (tvTitle != null) tvTitle.setText("Rename Project");
-        
-        TextView tvSubtitle = dialog.findViewById(R.id.tvSubtitle);
-        if (tvSubtitle != null) tvSubtitle.setText("Update your project's name");
-
-        EditText etName = dialog.findViewById(R.id.etProjectName);
-        EditText etDesc = dialog.findViewById(R.id.etProjectDesc);
-        View tvSuggestions = dialog.findViewById(R.id.tvSuggestions);
-        View chipGroup = dialog.findViewById(R.id.chipGroupSuggestions);
-        
-        if (etDesc != null) ((View)etDesc.getParent()).setVisibility(View.GONE);
-        if (tvSuggestions != null) tvSuggestions.setVisibility(View.GONE);
-        if (chipGroup != null) chipGroup.setVisibility(View.GONE);
-
-        etName.setText(projectTitle);
-        etName.setSelection(etName.getText().length());
-
-        Button btnSave = dialog.findViewById(R.id.btnCreate);
-        if (btnSave != null) {
-            btnSave.setText("Save Changes");
-            btnSave.setEnabled(true);
-            btnSave.setOnClickListener(v -> {
-                String newName = etName.getText().toString().trim();
-                if (!newName.isEmpty()) {
-                    projectTitle = newName;
-                    TextView tvHeaderTitle = findViewById(R.id.tvChatTitle);
-                    tvHeaderTitle.setText(projectTitle);
-                    
-                    if (currentProject != null) {
-                        currentProject.setTitle(projectTitle);
-                        if ("Published".equalsIgnoreCase(projectStatus)) {
-                            currentProject.setHasUnpublishedChanges(true);
-                        }
+    private void triggerAction(String successMessage, Call<ActionResponse> call) {
+        call.enqueue(new Callback<ActionResponse>() {
+            @Override
+            public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
+                if (response.isSuccessful()) {
+                    ActionResponse body = response.body();
+                    if (body != null && body.getUrl() != null && !body.getUrl().trim().isEmpty()) {
+                        showSuccessSnackbar(successMessage + "\n" + body.getUrl());
+                    } else {
+                        showSuccessSnackbar(successMessage);
                     }
-                    
-                    showSuccessSnackbar("Project name changed locally. Click 'Update & Publish' to sync with Discover.");
-                    dialog.dismiss();
-                }
-            });
-        }
-
-        Button btnCancel = dialog.findViewById(R.id.btnCancel);
-        if (btnCancel != null) btnCancel.setOnClickListener(v -> dialog.dismiss());
-
-        dialog.show();
-    }
-
-    private void unpublishProject() {
-        projectStatus = "Not Published";
-        updateStatusUI();
-        
-        if (currentProject != null) {
-            currentProject.setHasUnpublishedChanges(false);
-            for (int i = 0; i < HomeActivity.communityProjects.size(); i++) {
-                if (HomeActivity.communityProjects.get(i).getId() == currentProject.getId()) {
-                    HomeActivity.communityProjects.remove(i);
-                    break;
+                } else {
+                    showInfoSnackbar("Action failed (" + response.code() + ")");
                 }
             }
-        }
-        
-        showInfoSnackbar("Project unpublished and removed from Discover");
-    }
 
-    private void showPublishCategoryDialog(boolean isUpdate) {
-        final Dialog dialog = new Dialog(this);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setContentView(R.layout.dialog_publish_type);
-
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            dialog.getWindow().setGravity(Gravity.CENTER);
-        }
-
-        MaterialCardView btnProject = dialog.findViewById(R.id.btnTypeProject);
-        MaterialCardView btnTemplate = dialog.findViewById(R.id.btnTypeTemplate);
-        Button btnCancel = dialog.findViewById(R.id.btnCancelPublish);
-
-        btnProject.setOnClickListener(v -> {
-            handlePublishAction(isUpdate, "Project");
-            dialog.dismiss();
+            @Override
+            public void onFailure(Call<ActionResponse> call, Throwable t) {
+                showInfoSnackbar("Could not reach backend");
+            }
         });
-
-        btnTemplate.setOnClickListener(v -> {
-            handlePublishAction(isUpdate, "Template");
-            dialog.dismiss();
-        });
-
-        btnCancel.setOnClickListener(v -> dialog.dismiss());
-
-        dialog.show();
-    }
-
-    private void handlePublishAction(boolean isUpdate, String category) {
-        projectStatus = "Published";
-        updateStatusUI();
-        
-        if (currentProject != null) {
-            currentProject.setType(category);
-            currentProject.setStatus("Published");
-            currentProject.setHasUnpublishedChanges(false);
-            
-            // Sync with Discover
-            boolean foundInCommunity = false;
-            for (Project p : HomeActivity.communityProjects) {
-                if (p.getId() == currentProject.getId()) {
-                    p.setTitle(projectTitle);
-                    p.setType(category);
-                    foundInCommunity = true;
-                    break;
-                }
-            }
-            
-            if (!foundInCommunity) {
-                // Add a COPY to community projects
-                Project communityProj = new Project(currentProject);
-                communityProj.setTitle(projectTitle); 
-                HomeActivity.communityProjects.add(0, communityProj);
-            }
-        }
-        
-        String message = isUpdate ? "Project updated and published to Discover!" : "Project published successfully to Discover!";
-        showSuccessSnackbar(message);
     }
 
     private void showSuccessSnackbar(String message) {
@@ -379,29 +314,21 @@ public class ChatActivity extends AppCompatActivity {
 
         btnDelete.setOnClickListener(v -> {
             if (currentProject != null) {
-                for (int i = 0; i < HomeActivity.communityProjects.size(); i++) {
-                    if (HomeActivity.communityProjects.get(i).getId() == currentProject.getId()) {
-                        HomeActivity.communityProjects.remove(i);
-                        break;
-                    }
-                }
                 HomeActivity.userProjects.remove(currentProject);
             }
-            
-            showInfoSnackbar("Project deleted");
+            Toast.makeText(this, "Project deleted", Toast.LENGTH_SHORT).show();
             dialog.dismiss();
-            findViewById(android.R.id.content).postDelayed(this::finish, 1000);
+            finish();
         });
 
         btnCancel.setOnClickListener(v -> dialog.dismiss());
-
         dialog.show();
     }
 
     private void showChatMode() {
         btnChatToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
         btnChatToggle.setTextColor(Color.parseColor("#1A1A1A"));
-        
+
         btnViewToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.TRANSPARENT));
         btnViewToggle.setTextColor(Color.parseColor("#757575"));
 
@@ -413,7 +340,7 @@ public class ChatActivity extends AppCompatActivity {
     private void showViewMode() {
         btnViewToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
         btnViewToggle.setTextColor(Color.parseColor("#1A1A1A"));
-        
+
         btnChatToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.TRANSPARENT));
         btnChatToggle.setTextColor(Color.parseColor("#757575"));
 
@@ -428,14 +355,25 @@ public class ChatActivity extends AppCompatActivity {
         rvChat.scrollToPosition(messageList.size() - 1);
         etMessage.setText("");
 
-        rvChat.postDelayed(() -> {
-            String response = "Great addition! I've updated the plan for " + projectTitle + " to include those features.\n\nYour app now has more comprehensive functionality!";
-            messageList.add(new ChatMessage(response, false));
-            adapter.notifyItemInserted(messageList.size() - 1);
-            rvChat.scrollToPosition(messageList.size() - 1);
-            if (currentProject != null && "Published".equalsIgnoreCase(projectStatus)) {
-                currentProject.setHasUnpublishedChanges(true);
+        if (TextUtils.isEmpty(projectId)) {
+            showInfoSnackbar("Project is not linked to backend");
+            return;
+        }
+
+        apiService.sendProjectMessage(projectId, new SendMessageRequest(text)).enqueue(new Callback<ActionResponse>() {
+            @Override
+            public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
+                if (!response.isSuccessful()) {
+                    showInfoSnackbar("Message failed to send");
+                    return;
+                }
+                loadMessages();
             }
-        }, 1200);
+
+            @Override
+            public void onFailure(Call<ActionResponse> call, Throwable t) {
+                showInfoSnackbar("Could not reach backend");
+            }
+        });
     }
 }

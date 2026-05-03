@@ -59,20 +59,20 @@ public class AuthViewModel extends ViewModel {
     public void signin(String email, String password) {
         loading.setValue(true);
 
-        authRepository.signin(email, password).enqueue(new Callback<VerificationStartResponse>() {
+        authRepository.signin(email, password).enqueue(new Callback<AuthResponse>() {
             @Override
-            public void onResponse(Call<VerificationStartResponse> call, Response<VerificationStartResponse> response) {
+            public void onResponse(Call<AuthResponse> call, Response<AuthResponse> response) {
                 loading.setValue(false);
 
                 if (response.isSuccessful() && response.body() != null) {
-                    verificationStarted.setValue(response.body());
+                    authSuccess.setValue(response.body());
                 } else {
                     authError.setValue(extractErrorMessage(response, "Invalid email or password"));
                 }
             }
 
             @Override
-            public void onFailure(Call<VerificationStartResponse> call, Throwable t) {
+            public void onFailure(Call<AuthResponse> call, Throwable t) {
                 loading.setValue(false);
                 authError.setValue("Connection failed: " + t.getMessage());
             }

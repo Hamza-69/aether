@@ -26,22 +26,6 @@ public class HomeActivity extends AppCompatActivity {
         viewPager = findViewById(R.id.mainViewPager);
         bottomNav = findViewById(R.id.bottomNav);
 
-        if (userProjects.isEmpty()) {
-            userProjects.add(new Project("Fitness Tracker", "Modern UI for health tracking", "Published"));
-            userProjects.add(new Project("E-commerce App", "AI-driven shopping experience", "Draft"));
-            userProjects.add(new Project("Smart Home", "Control your home appliances", "Published"));
-            userProjects.add(new Project("Recipe Finder", "Find dishes by ingredients", "Published"));
-        }
-        
-        if (communityProjects.isEmpty()) {
-            communityProjects.add(new Project("Meditation Timer", "Peaceful meditation sessions", "Published", "Project"));
-            communityProjects.add(new Project("E-commerce UI", "Modern shopping template", "Published", "Template"));
-            communityProjects.add(new Project("Fitness Tracker", "Track your daily steps", "Published", "Project"));
-            communityProjects.add(new Project("Recipe App", "Find meals by ingredients", "Published", "Template"));
-            communityProjects.add(new Project("Smart Home", "Control your IoT devices", "Published", "Project"));
-            communityProjects.add(new Project("Chat UI Kit", "Messaging app template", "Published", "Template"));
-        }
-
         MainPagerAdapter adapter = new MainPagerAdapter(this);
         viewPager.setAdapter(adapter);
         viewPager.setOffscreenPageLimit(3);

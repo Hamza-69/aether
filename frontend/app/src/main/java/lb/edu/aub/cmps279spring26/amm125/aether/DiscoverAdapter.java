@@ -15,14 +15,27 @@ import android.widget.ImageView;
 import android.widget.PopupMenu;
 import android.widget.TextView;
 import android.widget.Toast;
+
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
+
+import com.bumptech.glide.Glide;
 import com.google.android.material.card.MaterialCardView;
+
 import java.util.List;
+
+import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiClient;
+import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiService;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.BackendProject;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.ProjectWrapperResponse;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 public class DiscoverAdapter extends RecyclerView.Adapter<DiscoverAdapter.DiscoverViewHolder> {
 
     private List<Project> communityItems;
+    private final ApiService apiService = ApiClient.getApiService();
 
     public DiscoverAdapter(List<Project> communityItems) {
         this.communityItems = communityItems;
@@ -39,14 +52,30 @@ public class DiscoverAdapter extends RecyclerView.Adapter<DiscoverAdapter.Discov
     public void onBindViewHolder(@NonNull DiscoverViewHolder holder, int position) {
         Project item = communityItems.get(position);
         holder.tvTitle.setText(item.getTitle());
-        
+
         String type = item.getType() != null ? item.getType() : "Project";
         holder.tvType.setText(type);
-        
+
         if ("Template".equalsIgnoreCase(type)) {
             holder.typeCard.setCardBackgroundColor(0xFF7C4DFF);
         } else {
             holder.typeCard.setCardBackgroundColor(0xFF00BFA5);
+        }
+
+        if (item.getAuthorUsername() != null && !item.getAuthorUsername().trim().isEmpty()) {
+            holder.authorContainer.setVisibility(View.VISIBLE);
+            holder.tvAuthorName.setText("@" + item.getAuthorUsername());
+        } else {
+            holder.authorContainer.setVisibility(View.GONE);
+        }
+
+        if (item.getScreenshotUrl() != null && !item.getScreenshotUrl().trim().isEmpty()) {
+            Glide.with(holder.itemView.getContext())
+                    .load(item.getScreenshotUrl())
+                    .placeholder(android.R.color.darker_gray)
+                    .into(holder.ivProjectImage);
+        } else {
+            holder.ivProjectImage.setImageResource(android.R.drawable.ic_menu_gallery);
         }
 
         holder.itemView.setOnClickListener(v -> showProjectActionsDialog(v.getContext(), item));
@@ -92,9 +121,36 @@ public class DiscoverAdapter extends RecyclerView.Adapter<DiscoverAdapter.Discov
         });
 
         btnClone.setOnClickListener(v -> {
-            Project cloned = new Project(item.getTitle() + " (Copy)", item.getDescription(), "Draft", "Project");
-            HomeActivity.userProjects.add(0, cloned);
-            Toast.makeText(context, "Project cloned to your list!", Toast.LENGTH_SHORT).show();
+            if (item.getBackendId() == null || item.getBackendId().trim().isEmpty()) {
+                Toast.makeText(context, "Cannot clone this project", Toast.LENGTH_SHORT).show();
+                dialog.dismiss();
+                return;
+            }
+            apiService.cloneDiscoverProject(item.getBackendId()).enqueue(new Callback<ProjectWrapperResponse>() {
+                @Override
+                public void onResponse(Call<ProjectWrapperResponse> call, Response<ProjectWrapperResponse> response) {
+                    if (!response.isSuccessful() || response.body() == null || response.body().getProject() == null) {
+                        Toast.makeText(context, "Clone failed", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    BackendProject backendProject = response.body().getProject();
+                    Project cloned = new Project(
+                            backendProject.getName(),
+                            "Cloned from Discover",
+                            "Not Published",
+                            "Project"
+                    );
+                    cloned.setBackendId(backendProject.getId());
+                    cloned.setScreenshotUrl(backendProject.getScreenshotUrl());
+                    HomeActivity.userProjects.add(0, cloned);
+                    Toast.makeText(context, "Project cloned to your list!", Toast.LENGTH_SHORT).show();
+                }
+
+                @Override
+                public void onFailure(Call<ProjectWrapperResponse> call, Throwable t) {
+                    Toast.makeText(context, "Could not reach backend", Toast.LENGTH_SHORT).show();
+                }
+            });
             dialog.dismiss();
         });
 
@@ -112,15 +168,19 @@ public class DiscoverAdapter extends RecyclerView.Adapter<DiscoverAdapter.Discov
     }
 
     public static class DiscoverViewHolder extends RecyclerView.ViewHolder {
-        TextView tvTitle, tvType;
-        MaterialCardView typeCard, optionsCard;
+        TextView tvTitle, tvType, tvAuthorName;
+        MaterialCardView typeCard, optionsCard, authorContainer;
+        ImageView ivProjectImage;
 
         public DiscoverViewHolder(@NonNull View itemView) {
             super(itemView);
             tvTitle = itemView.findViewById(R.id.tvProjectTitle);
             tvType = itemView.findViewById(R.id.tvStatus);
+            tvAuthorName = itemView.findViewById(R.id.tvAuthorName);
             typeCard = itemView.findViewById(R.id.statusBadge);
             optionsCard = itemView.findViewById(R.id.ivOptionsCard);
+            authorContainer = itemView.findViewById(R.id.authorContainer);
+            ivProjectImage = itemView.findViewById(R.id.ivProjectImage);
         }
     }
 }

@@ -59,7 +59,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="12dp"
-                android:text="Rename Project"
+                android:text="Generate Keystore"
                 android:textColor="@color/text_main"
                 android:textSize="14sp" />
         </LinearLayout>
@@ -86,7 +86,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="12dp"
-                android:text="Publish"
+                android:text="Start Preview"
                 android:textColor="@color/text_main"
                 android:textSize="14sp" />
         </LinearLayout>
@@ -102,7 +102,7 @@
             android:orientation="horizontal"
             android:paddingHorizontal="16dp"
             android:paddingVertical="12dp"
-            android:visibility="gone">
+                android:visibility="visible">
             <ImageView
                 android:layout_width="20dp"
                 android:layout_height="20dp"
@@ -112,7 +112,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="12dp"
-                android:text="Update &amp; Publish"
+                android:text="Restart Preview"
                 android:textColor="@color/primary_purple"
                 android:textSize="14sp"
                 android:textStyle="bold" />
