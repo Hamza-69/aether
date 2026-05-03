@@ -8,14 +8,14 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  username  String   @unique
+  id             String   @id @default(cuid())
+  name           String
+  email          String   @unique
+  username       String   @unique
   password       String
   profilePicture String?
   createdAt      DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
 
   projects    Project[]
   userSecrets UserSecret[]
@@ -93,12 +93,13 @@ model Project {
 
   screenshotUrl String?
 
-  messages    Message[]
-  apks        APK[]
-  keyStore    KeyStore?
-  deployments Deployment[]
-  secrets     Secret[]
-  previews    Preview[]
+  messages         Message[]
+  apks             APK[]
+  keyStore         KeyStore?
+  deployments      Deployment[]
+  secrets          Secret[]
+  previews         Preview[]
+  publishedProject PublishedProject?
 }
 
 model Preview {
@@ -239,7 +240,21 @@ model UserSecret {
   updatedAt      DateTime @updatedAt @db.Timestamptz(3)
 
   userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, name])
+}
+
+model PublishedProject {
+  id             String   @id @default(cuid())
+  name           String
+  screenshotUrl  String?
+  content        String
+  frontendTarKey String?
+  backendTarKey  String?
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  projectId String  @unique
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }

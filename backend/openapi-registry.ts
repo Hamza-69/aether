@@ -21,6 +21,7 @@ import {
   UserSecretEntrySchema,
   UserSecretSummarySchema,
   UpsertUserSecretsBodySchema,
+  PublishedProjectSchema,
 } from "./models"
 
 const registry = new OpenAPIRegistry()
@@ -54,6 +55,8 @@ registry.register("GenerateKeystoreBody", GenerateKeystoreBodySchema)
 registry.register("UserSecretEntry", UserSecretEntrySchema)
 registry.register("UserSecretSummary", UserSecretSummarySchema)
 registry.register("UpsertUserSecretsBody", UpsertUserSecretsBodySchema)
+
+registry.register("PublishedProject", PublishedProjectSchema)
 
 const UserSchema = z
   .object({
@@ -605,6 +608,74 @@ registry.registerPath({
     },
     401: {
       description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "post",
+  path: "/api/projects/{projectId}/publish",
+  tags: ["Projects"],
+  summary: "Publish a project",
+  description: "Publishes the project's latest fragment to the discover page. Upserts a PublishedProject.",
+  security: protectedRoute,
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+  },
+  responses: {
+    200: {
+      description: "Project published",
+      content: {
+        "application/json": {
+          schema: z.object({ publishedProject: PublishedProjectSchema }),
+        },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Project or fragment not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "post",
+  path: "/api/projects/{projectId}/unpublish",
+  tags: ["Projects"],
+  summary: "Unpublish a project",
+  description: "Removes the project from the discover page.",
+  security: protectedRoute,
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+  },
+  responses: {
+    200: {
+      description: "Project unpublished",
+      content: {
+        "application/json": {
+          schema: z.object({ message: z.string() }),
+        },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Project not found",
       content: { "application/json": { schema: ErrorSchema } },
     },
     500: {
@@ -1285,6 +1356,101 @@ registry.registerPath({
     },
     404: {
       description: "Project not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+// ── Discover ────────────────────────────────────────────────────────────────
+
+registry.registerPath({
+  method: "get",
+  path: "/api/discover",
+  tags: ["Discover"],
+  summary: "List all published projects",
+  security: protectedRoute,
+  responses: {
+    200: {
+      description: "Published projects list",
+      content: {
+        "application/json": {
+          schema: z.object({ publishedProjects: z.array(PublishedProjectSchema) }),
+        },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "get",
+  path: "/api/discover/{id}",
+  tags: ["Discover"],
+  summary: "Get a published project by ID",
+  security: protectedRoute,
+  request: {
+    params: z.object({ id: z.string().openapi({ example: "pub_123" }) }),
+  },
+  responses: {
+    200: {
+      description: "Published project details",
+      content: {
+        "application/json": {
+          schema: z.object({ publishedProject: PublishedProjectSchema }),
+        },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Published project not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "post",
+  path: "/api/discover/{id}/clone",
+  tags: ["Discover"],
+  summary: "Clone a published project",
+  description: "Creates a new project for the current user, copying the code from the published project.",
+  security: protectedRoute,
+  request: {
+    params: z.object({ id: z.string().openapi({ example: "pub_123" }) }),
+  },
+  responses: {
+    201: {
+      description: "Project cloned successfully",
+      content: {
+        "application/json": {
+          schema: z.object({ project: ProjectSchema }),
+        },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Published project not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },

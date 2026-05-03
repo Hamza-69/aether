@@ -269,3 +269,81 @@ projectsRouter.post("/:projectId/preview/restart", async (req, res) => {
     res.status(500).json({ error: "Failed to restart preview" })
   }
 })
+
+// POST /api/projects/:projectId/publish — publish a project
+projectsRouter.post("/:projectId/publish", async (req, res) => {
+  const { projectId } = req.params
+
+  const project = await ensureProjectOwnership(projectId, req.user!.id)
+  if (!project) {
+    res.status(404).json({ error: "Project not found" })
+    return
+  }
+
+  try {
+    const latestMessage = await prisma.message.findFirst({
+      where: {
+        projectId,
+        role: "ASSISTANT",
+        fragment: { isNot: null },
+      },
+      orderBy: { createdAt: "desc" },
+      include: { fragment: true },
+    })
+
+    if (!latestMessage || !latestMessage.fragment) {
+      res.status(404).json({ error: "No code fragment found to publish" })
+      return
+    }
+
+    const publishedProject = await prisma.publishedProject.upsert({
+      where: { projectId },
+      create: {
+        projectId,
+        name: project.name,
+        screenshotUrl: project.screenshotUrl,
+        content: latestMessage.fragment.content,
+        frontendTarKey: latestMessage.fragment.frontendTarKey,
+        backendTarKey: latestMessage.fragment.backendTarKey,
+      },
+      update: {
+        name: project.name,
+        screenshotUrl: project.screenshotUrl,
+        content: latestMessage.fragment.content,
+        frontendTarKey: latestMessage.fragment.frontendTarKey,
+        backendTarKey: latestMessage.fragment.backendTarKey,
+      },
+    })
+
+    res.status(200).json({ publishedProject })
+  } catch (error) {
+    console.error("[projectsRouter.POST /:projectId/publish] Failed:", error)
+    res.status(500).json({ error: "Failed to publish project" })
+  }
+})
+
+// POST /api/projects/:projectId/unpublish — unpublish a project
+projectsRouter.post("/:projectId/unpublish", async (req, res) => {
+  const { projectId } = req.params
+
+  const project = await ensureProjectOwnership(projectId, req.user!.id)
+  if (!project) {
+    res.status(404).json({ error: "Project not found" })
+    return
+  }
+
+  try {
+    await prisma.publishedProject.delete({
+      where: { projectId },
+    })
+    res.status(200).json({ message: "Project unpublished successfully" })
+  } catch (error: any) {
+    if (error.code === 'P2025') {
+      // Record to delete does not exist
+      res.status(200).json({ message: "Project was not published" })
+      return
+    }
+    console.error("[projectsRouter.POST /:projectId/unpublish] Failed:", error)
+    res.status(500).json({ error: "Failed to unpublish project" })
+  }
+})

@@ -6,6 +6,7 @@ import morgan from "morgan"
 import { projectsRouter } from "./controllers/projects"
 import { authRouter } from "./controllers/auth"
 import { userSecretsRouter } from "./controllers/userSecrets"
+import { discoverRouter } from "./controllers/discover"
 import { codeAgentFunction } from "./ai/inngest/jobs/agent"
 import { previewProjectFunction } from "./ai/inngest/jobs/preview"
 import { deployProjectFunction } from "./ai/inngest/jobs/deploy"
@@ -60,6 +61,7 @@ app.use("/api/auth", authRouter)
 app.use("/api/secrets", requireAuth, userSecretsRouter)
 app.use("/api/projects", requireAuth, projectsRouter)
 app.use("/api/realtime", requireAuth, realtimeRouter)
+app.use("/api/discover", requireAuth, discoverRouter)
 
 console.log("[app] Registered routes:")
 console.log("  - /api/inngest")
@@ -67,6 +69,7 @@ console.log("  - /api/auth")
 console.log("  - /api/projects")
 console.log("  - /api/projects/:projectId/messages")
 console.log("  - /api/realtime")
+console.log("  - /api/discover")
 console.log("  - /api/docs (API docs)")
 console.log("  - /openapi.json")
 
