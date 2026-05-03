@@ -80,6 +80,7 @@ model Project {
 
   previewStatus    PreviewStatus @default(IDLE)
   previewStartedAt DateTime?     @db.Timestamptz(3)
+  previewSandboxId String?
 
   deploymentStatus    DeploymentStatus @default(IDLE)
   deploymentStartedAt DateTime?        @db.Timestamptz(3)

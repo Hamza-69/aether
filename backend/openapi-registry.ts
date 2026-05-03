@@ -657,6 +657,45 @@ registry.registerPath({
   },
 })
 
+registry.registerPath({
+  method: "post",
+  path: "/api/projects/{projectId}/preview/restart",
+  tags: ["Projects"],
+  summary: "Force restart the sandbox preview for a project",
+  description:
+    "Kills the existing e2b sandbox if one is tracked, provisions a new sandbox, enqueues the preview-project/run Inngest job, and returns 202 with scheduled=true. Has a rate limit of 1 restart per minute per project.",
+  security: protectedRoute,
+  request: {
+    params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
+  },
+  responses: {
+    202: {
+      description: "New sandbox provisioned and background job enqueued",
+      content: {
+        "application/json": {
+          schema: ProjectPreviewSchema,
+        },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Project or runnable fragment not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    429: {
+      description: "Rate limit exceeded",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
 // ── Messages ────────────────────────────────────────────────────────────────
 
 registry.registerPath({
