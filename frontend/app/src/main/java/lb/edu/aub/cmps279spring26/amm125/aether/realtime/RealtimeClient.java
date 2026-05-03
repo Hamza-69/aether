@@ -88,7 +88,10 @@ public class RealtimeClient {
                             for (JsonElement chunk : streamChunks) {
                                 if (chunk == null || chunk.isJsonNull()) continue;
                                 try {
-                                    notifyData(new JSONObject(chunk.toString()));
+                                    JSONObject payload = coerceObject(chunk.toString());
+                                    if (payload != null && payload.length() > 0) {
+                                        notifyData(payload);
+                                    }
                                 } catch (JSONException ignored) {
                                     // Ignore malformed historical chunks.
                                 }
@@ -146,21 +149,10 @@ public class RealtimeClient {
                 if ("datastream-start".equalsIgnoreCase(kind) || "datastream-end".equalsIgnoreCase(kind)) {
                     return;
                 }
-
-                JSONObject payload;
-                Object data = root.has("data") ? root.opt("data") : root.opt("payload");
-                if (data instanceof JSONObject) {
-                    payload = (JSONObject) data;
-                } else if (data instanceof String) {
-                    payload = new JSONObject();
-                    payload.put("message", data);
-                } else if ("chunk".equalsIgnoreCase(kind) && root.has("chunk")) {
-                    payload = new JSONObject();
-                    payload.put("message", root.optString("chunk", ""));
-                } else {
-                    payload = new JSONObject();
+                JSONObject payload = extractPayload(root);
+                if (payload.length() > 0) {
+                    notifyData(payload);
                 }
-                notifyData(payload);
             } catch (JSONException e) {
                 Log.w(TAG, "Ignoring malformed realtime frame for " + streamType + ": " + text, e);
             }
@@ -179,5 +171,72 @@ public class RealtimeClient {
             notifyStatus("failed");
             scheduleReconnect();
         }
+    }
+
+    private JSONObject extractPayload(JSONObject root) throws JSONException {
+        Object candidate = root.has("data") ? root.opt("data") : root.opt("payload");
+        JSONObject payload = coerceObject(candidate);
+        if (payload == null && root.has("chunk")) {
+            payload = new JSONObject();
+            payload.put("message", root.optString("chunk", ""));
+            return payload;
+        }
+        if (payload == null) {
+            return new JSONObject();
+        }
+        return unwrapEnvelope(payload);
+    }
+
+    private JSONObject unwrapEnvelope(JSONObject payload) throws JSONException {
+        JSONObject current = payload;
+        for (int i = 0; i < 4; i++) {
+            if (looksLikeBusinessPayload(current)) {
+                return current;
+            }
+            Object nested = current.has("data") ? current.opt("data") : current.opt("payload");
+            JSONObject next = coerceObject(nested);
+            if (next == null) break;
+            current = next;
+        }
+        return current;
+    }
+
+    private boolean looksLikeBusinessPayload(JSONObject value) {
+        return value.has("message")
+                || value.has("done")
+                || value.has("error")
+                || value.has("url")
+                || value.has("preview")
+                || value.has("deployment")
+                || value.has("apk")
+                || value.has("screenshotUrl")
+                || value.has("id")
+                || value.has("role")
+                || value.has("content")
+                || value.has("tool")
+                || value.has("explanation")
+                || value.has("fragment")
+                || value.has("starting")
+                || value.has("status")
+                || value.has("completed");
+    }
+
+    private JSONObject coerceObject(Object value) throws JSONException {
+        if (value instanceof JSONObject) {
+            return (JSONObject) value;
+        }
+        if (!(value instanceof String)) {
+            return null;
+        }
+        String text = ((String) value).trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        if (text.startsWith("{")) {
+            return new JSONObject(text);
+        }
+        JSONObject wrapped = new JSONObject();
+        wrapped.put("message", text);
+        return wrapped;
     }
 }

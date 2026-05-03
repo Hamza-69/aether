@@ -116,6 +116,12 @@ public class DiscoverFragment extends Fragment {
         return view;
     }
 
+    @Override
+    public void onResume() {
+        super.onResume();
+        loadDiscoverProjects();
+    }
+
     private void loadDiscoverProjects() {
         if (swipeRefreshDiscover != null && !swipeRefreshDiscover.isRefreshing()) {
             swipeRefreshDiscover.setRefreshing(true);

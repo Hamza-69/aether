@@ -82,9 +82,14 @@ public class ChatActivity extends AppCompatActivity {
     private View inputContainer;
     private View previewContainer;
     private View previewLoadingOverlay;
+    private View mockPhone;
+    private View previewStatusCard;
     private WebView webPreview;
     private TextView tvPreviewHint;
     private TextView tvPreviewLoading;
+    private TextView tvPreviewStatusTitle;
+    private TextView tvPreviewStatusBody;
+    private TextView tvPreviewStatusUrl;
     private MaterialButton btnChatToggle, btnViewToggle;
     private String currentPreviewUrl;
     private String projectTitle;
@@ -96,6 +101,10 @@ public class ChatActivity extends AppCompatActivity {
     private boolean previewErrorShown = false;
     private boolean previewRecoveryInProgress = false;
     private boolean previewStarting = false;
+    private boolean previewStatusMode = false;
+    private String renderedPreviewUrl;
+    private String lastPreviewStatusLine = "";
+    private final StringBuilder previewStatusSteps = new StringBuilder();
     private String activeAgentMessageId;
     private final ApiService apiService = ApiClient.getApiService();
     private final Map<String, RealtimeClient> realtimeClients = new HashMap<>();
@@ -138,9 +147,14 @@ public class ChatActivity extends AppCompatActivity {
         inputContainer = findViewById(R.id.inputContainer);
         previewContainer = findViewById(R.id.previewContainer);
         previewLoadingOverlay = findViewById(R.id.previewLoadingOverlay);
+        mockPhone = findViewById(R.id.mockPhone);
+        previewStatusCard = findViewById(R.id.previewStatusCard);
         webPreview = findViewById(R.id.webPreview);
         tvPreviewHint = findViewById(R.id.tvPreviewHint);
         tvPreviewLoading = findViewById(R.id.tvPreviewLoading);
+        tvPreviewStatusTitle = findViewById(R.id.tvPreviewStatusTitle);
+        tvPreviewStatusBody = findViewById(R.id.tvPreviewStatusBody);
+        tvPreviewStatusUrl = findViewById(R.id.tvPreviewStatusUrl);
         btnChatToggle = findViewById(R.id.btnChatToggle);
         btnViewToggle = findViewById(R.id.btnViewToggle);
 
@@ -222,7 +236,16 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void connectRealtimeForType(String streamType) {
-        if (TextUtils.isEmpty(projectId) || realtimeClients.containsKey(streamType)) {
+        connectRealtimeForType(streamType, false);
+    }
+
+    private void connectRealtimeForType(String streamType, boolean forceReconnect) {
+        if (TextUtils.isEmpty(projectId)) {
+            return;
+        }
+        if (forceReconnect) {
+            stopRealtimeForType(streamType);
+        } else if (realtimeClients.containsKey(streamType)) {
             return;
         }
         RealtimeClient client = new RealtimeClient(apiService, new RealtimeClient.Listener() {
@@ -251,45 +274,61 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
-        String message = payload.optString("message", "");
+        String message = extractRealtimeMessage(payload);
         boolean done = payload.optBoolean("done", false);
         boolean error = payload.optBoolean("error", false);
 
-        if (!TextUtils.isEmpty(message)) {
+        if (!TextUtils.isEmpty(message) && !STREAM_PREVIEW.equals(streamType)) {
             appendSystemMessage("[" + formatStreamLabel(streamType) + "] " + message);
         }
-        if (error) {
+        if (error && !STREAM_PREVIEW.equals(streamType)) {
             showInfoSnackbar(formatStreamLabel(streamType) + " failed");
         }
 
         if (STREAM_PREVIEW.equals(streamType)) {
+            String statusMessage = extractRealtimeMessage(payload);
+            if (!TextUtils.isEmpty(statusMessage)) {
+                appendPreviewStatusStep(statusMessage);
+            }
+
+            boolean previewCompleted = false;
+            boolean previewRunning = false;
             String topLevelUrl = payload.optString("url", "");
             if (!TextUtils.isEmpty(topLevelUrl)) {
                 previewStarting = payload.optBoolean("starting", true);
-                loadPreviewUrl(topLevelUrl, true);
+                setCurrentPreviewUrl(topLevelUrl);
+                appendPreviewStatusStep("Preview URL received");
             }
 
             JSONObject preview = payload.optJSONObject("preview");
             if (preview != null) {
                 String previewUrl = preview.optString("url", "");
+                String previewMessage = preview.optString("message", "");
+                if (!TextUtils.isEmpty(previewMessage)) {
+                    appendPreviewStatusStep(previewMessage);
+                }
+                String previewStatus = preview.optString("status", "");
+                if (!TextUtils.isEmpty(previewStatus)) {
+                    appendPreviewStatusStep("Status: " + previewStatus);
+                }
                 if (!TextUtils.isEmpty(previewUrl)) {
                     boolean completed = preview.optBoolean("completed", false);
-                    previewStarting = !completed;
-                    if (completed) {
-                        showSuccessSnackbar("Preview ready\n" + previewUrl);
+                    boolean running = "RUNNING".equalsIgnoreCase(previewStatus);
+                    previewCompleted = completed;
+                    previewRunning = running;
+                    previewStarting = !(completed || running);
+                    setCurrentPreviewUrl(previewUrl);
+                    if (completed || running) {
+                        showPreviewStatusReady(previewUrl);
                     }
-                    loadPreviewUrl(previewUrl, !completed);
                     if (completed) {
                         previewRecoveryInProgress = false;
-                        projectStatus = "Published";
-                        updateStatusUI();
                     }
                 }
             }
-        }
-
-        if (done && STREAM_CODE_AGENT.equals(streamType)) {
-            loadMessages();
+            if (done || previewCompleted || previewRunning) {
+                stopRealtimeForType(STREAM_PREVIEW);
+            }
         }
     }
 
@@ -318,10 +357,10 @@ public class ChatActivity extends AppCompatActivity {
         if (preview != null) {
             String previewUrl = preview.optString("url", "");
             if (!TextUtils.isEmpty(previewUrl)) {
-                showSuccessSnackbar("Preview ready\n" + previewUrl);
-                loadPreviewUrl(previewUrl);
-                projectStatus = "Published";
-                updateStatusUI();
+                setCurrentPreviewUrl(previewUrl);
+                if (!previewStatusMode) {
+                    loadPreviewUrl(previewUrl);
+                }
             }
         }
 
@@ -382,6 +421,16 @@ public class ChatActivity extends AppCompatActivity {
             }
         }
         return null;
+    }
+
+    private String extractRealtimeMessage(JSONObject payload) {
+        Object raw = payload.opt("message");
+        if (raw instanceof JSONObject) {
+            String content = ((JSONObject) raw).optString("content", "");
+            return "null".equalsIgnoreCase(content) ? "" : content;
+        }
+        String message = payload.optString("message", "");
+        return "null".equalsIgnoreCase(message) ? "" : message;
     }
 
     private void stopRealtimeForType(String streamType) {
@@ -587,7 +636,6 @@ public class ChatActivity extends AppCompatActivity {
                 showInfoSnackbar("This project is not linked to backend yet");
                 return;
             }
-            connectRealtimeForType(STREAM_PREVIEW);
             previewStarting = true;
             triggerPreviewAction("Preview requested", apiService.restartPreview(projectId));
             showViewMode();
@@ -780,27 +828,38 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void triggerPreviewAction(String successMessage, Call<ActionResponse> call) {
+        startPreviewStatus(successMessage);
         call.enqueue(new Callback<ActionResponse>() {
             @Override
             public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
                 if (!response.isSuccessful()) {
-                    showInfoSnackbar("Action failed (" + response.code() + ")");
+                    appendPreviewStatusStep("Action failed (" + response.code() + ")");
+                    if (tvPreviewStatusTitle != null) {
+                        tvPreviewStatusTitle.setText("Preview failed");
+                    }
+                    setPreviewLoading(false, null);
                     return;
                 }
 
+                connectRealtimeForType(STREAM_PREVIEW, true);
                 ActionResponse body = response.body();
                 String previewUrl = body != null ? body.getUrl() : null;
                 if (!TextUtils.isEmpty(previewUrl)) {
-                    loadPreviewUrl(previewUrl, true);
-                    showSuccessSnackbar(successMessage + "\n" + previewUrl);
+                    setCurrentPreviewUrl(previewUrl);
+                    appendPreviewStatusStep("Preview job accepted by backend");
+                    appendPreviewStatusStep("Waiting for realtime updates...");
                 } else {
-                    showSuccessSnackbar(successMessage);
+                    appendPreviewStatusStep("Preview job accepted");
                 }
             }
 
             @Override
             public void onFailure(Call<ActionResponse> call, Throwable t) {
-                showInfoSnackbar("Could not reach backend");
+                appendPreviewStatusStep("Could not reach backend");
+                if (tvPreviewStatusTitle != null) {
+                    tvPreviewStatusTitle.setText("Preview failed");
+                }
+                setPreviewLoading(false, null);
             }
         });
     }
@@ -915,11 +974,25 @@ public class ChatActivity extends AppCompatActivity {
         }
 
         if (!TextUtils.isEmpty(currentPreviewUrl)) {
-            setPreviewLoading(true, "Loading preview...");
-            webPreview.loadUrl(currentPreviewUrl);
+            if (previewStatusMode) {
+                webPreview.stopLoading();
+                webPreview.loadUrl("about:blank");
+                setPreviewLoading(false, null);
+                setPreviewStatusModeUI(true);
+            } else {
+                setPreviewStatusModeUI(false);
+                setPreviewLoading(true, "Loading preview...");
+                webPreview.loadUrl(currentPreviewUrl);
+            }
         } else if (!TextUtils.isEmpty(projectId)) {
-            setPreviewLoading(true, "Checking preview...");
-            hydratePreviewUrl();
+            if (previewStatusMode) {
+                setPreviewStatusModeUI(true);
+                setPreviewLoading(false, null);
+            } else {
+                setPreviewStatusModeUI(false);
+                setPreviewLoading(true, "Checking preview...");
+                hydratePreviewUrl();
+            }
         }
     }
 
@@ -955,16 +1028,90 @@ public class ChatActivity extends AppCompatActivity {
 
     private void loadPreviewUrl(String rawUrl, boolean starting) {
         if (TextUtils.isEmpty(rawUrl)) return;
-        String url = rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
-                ? rawUrl
-                : "https://" + rawUrl;
+        String url = normalizeUrl(rawUrl);
+        boolean sameRenderedUrl = url.equals(renderedPreviewUrl);
+        if (!previewStatusMode && sameRenderedUrl && !starting && previewContainer.getVisibility() == View.VISIBLE) {
+            setPreviewLoading(false, null);
+            return;
+        }
         currentPreviewUrl = url;
+        previewStatusMode = false;
         previewStarting = starting;
         previewErrorShown = false;
+        renderedPreviewUrl = url;
         tvPreviewHint.setText(url);
+        setPreviewStatusModeUI(false);
         if (previewContainer.getVisibility() == View.VISIBLE) {
             setPreviewLoading(true, starting ? "Preview is starting..." : "Loading preview...");
             webPreview.loadUrl(url);
+        }
+    }
+
+    private String normalizeUrl(String rawUrl) {
+        return rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
+                ? rawUrl
+                : "https://" + rawUrl;
+    }
+
+    private void setCurrentPreviewUrl(String rawUrl) {
+        if (TextUtils.isEmpty(rawUrl)) return;
+        currentPreviewUrl = normalizeUrl(rawUrl);
+    }
+
+    private void startPreviewStatus(String title) {
+        previewStatusMode = true;
+        renderedPreviewUrl = null;
+        previewStatusSteps.setLength(0);
+        lastPreviewStatusLine = "";
+        setPreviewStatusModeUI(true);
+        if (tvPreviewStatusTitle != null) {
+            tvPreviewStatusTitle.setText("Starting preview");
+        }
+        if (tvPreviewStatusBody != null) {
+            tvPreviewStatusBody.setText("");
+        }
+        if (tvPreviewStatusUrl != null) {
+            tvPreviewStatusUrl.setVisibility(View.GONE);
+            tvPreviewStatusUrl.setText("");
+        }
+        appendPreviewStatusStep(title);
+        appendPreviewStatusStep("Subscribing to realtime preview updates...");
+        if (previewContainer.getVisibility() == View.VISIBLE) {
+            webPreview.stopLoading();
+            webPreview.loadUrl("about:blank");
+        }
+        setPreviewLoading(false, null);
+    }
+
+    private void appendPreviewStatusStep(String line) {
+        if (TextUtils.isEmpty(line)) return;
+        String trimmed = line.trim();
+        if (trimmed.isEmpty() || trimmed.equals(lastPreviewStatusLine)) return;
+        lastPreviewStatusLine = trimmed;
+        if (previewStatusSteps.length() > 0) {
+            previewStatusSteps.append('\n');
+        }
+        previewStatusSteps.append("• ").append(trimmed);
+        if (tvPreviewStatusBody != null) {
+            tvPreviewStatusBody.setText(previewStatusSteps.toString());
+        }
+    }
+
+    private void showPreviewStatusReady(String rawUrl) {
+        previewStatusMode = false;
+        String normalizedUrl = normalizeUrl(rawUrl);
+        appendPreviewStatusStep("Preview marked RUNNING");
+        setPreviewStatusModeUI(false);
+        currentPreviewUrl = normalizedUrl;
+        loadPreviewUrl(normalizedUrl, false);
+    }
+
+    private void setPreviewStatusModeUI(boolean statusModeVisible) {
+        if (previewStatusCard != null) {
+            previewStatusCard.setVisibility(statusModeVisible ? View.VISIBLE : View.GONE);
+        }
+        if (mockPhone != null) {
+            mockPhone.setVisibility(statusModeVisible ? View.GONE : View.VISIBLE);
         }
     }
 
@@ -1016,9 +1163,9 @@ public class ChatActivity extends AppCompatActivity {
 
         previewRecoveryInProgress = true;
         previewStarting = true;
+        startPreviewStatus("Restarting preview");
         tvPreviewHint.setText(message + ". Restarting preview...");
         setPreviewLoading(true, "Restarting preview...");
-        connectRealtimeForType(STREAM_PREVIEW);
         apiService.restartPreview(projectId).enqueue(new Callback<ActionResponse>() {
             @Override
             public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
@@ -1030,10 +1177,12 @@ public class ChatActivity extends AppCompatActivity {
                     return;
                 }
 
+                connectRealtimeForType(STREAM_PREVIEW, true);
                 ActionResponse body = response.body();
                 String previewUrl = body != null ? body.getUrl() : null;
                 if (!TextUtils.isEmpty(previewUrl)) {
-                    loadPreviewUrl(previewUrl, true);
+                    setCurrentPreviewUrl(previewUrl);
+                    appendPreviewStatusStep("Preview job accepted by backend");
                 } else {
                     tvPreviewHint.setText("Preview restart requested");
                     setPreviewLoading(true, "Preview restart requested...");
@@ -1068,9 +1217,31 @@ public class ChatActivity extends AppCompatActivity {
                 }
                 BackendProject project = response.body().getProject();
                 String url = project != null ? project.getPreviewUrl() : null;
+                String previewStatus = project != null ? project.getPreviewStatus() : null;
+                boolean scheduled = "SCHEDULED".equalsIgnoreCase(previewStatus);
+                boolean running = "RUNNING".equalsIgnoreCase(previewStatus);
+
+                if (scheduled) {
+                    previewStarting = true;
+                    startPreviewStatus("Preview is queued");
+                    appendPreviewStatusStep("Waiting for realtime updates...");
+                    if (!TextUtils.isEmpty(url)) {
+                        setCurrentPreviewUrl(url);
+                    }
+                    connectRealtimeForType(STREAM_PREVIEW);
+                    setPreviewLoading(false, null);
+                    return;
+                }
+
+                if (running && !TextUtils.isEmpty(url)) {
+                    previewStarting = false;
+                    previewRecoveryInProgress = false;
+                    loadPreviewUrl(url, false);
+                    return;
+                }
+
                 if (!TextUtils.isEmpty(url)) {
-                    boolean starting = project != null && "SCHEDULED".equalsIgnoreCase(project.getPreviewStatus());
-                    loadPreviewUrl(url, starting);
+                    loadPreviewUrl(url, false);
                 } else {
                     tvPreviewHint.setText("Run preview to load your app");
                     setPreviewLoading(false, null);

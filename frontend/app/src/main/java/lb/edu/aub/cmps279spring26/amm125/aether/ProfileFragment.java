@@ -43,6 +43,7 @@ import lb.edu.aub.cmps279spring26.amm125.aether.model.ProfilePictureResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretSummary;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretsResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretsWriteResponse;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.User;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.UpsertUserSecretEntry;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.UpsertUserSecretsRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.utils.SecretCryptoUtil;
@@ -55,6 +56,9 @@ public class ProfileFragment extends Fragment {
     private final ApiService apiService = ApiClient.getApiService();
     private ImageView ivProfileImage;
     private MaterialCardView profileImageCard;
+    private TextView tvProfileName;
+    private TextView tvProfileUsername;
+    private TextView tvProfileEmail;
 
     private final ActivityResultLauncher<String> imagePickerLauncher =
             registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
@@ -71,23 +75,13 @@ public class ProfileFragment extends Fragment {
         UserManager userManager = UserManager.getInstance();
         userManager.load(requireContext());
 
-        TextView tvProfileName = view.findViewById(R.id.tvProfileName);
-        TextView tvProfileUsername = view.findViewById(R.id.tvProfileUsername);
-        TextView tvProfileEmail = view.findViewById(R.id.tvProfileEmail);
+        tvProfileName = view.findViewById(R.id.tvProfileName);
+        tvProfileUsername = view.findViewById(R.id.tvProfileUsername);
+        tvProfileEmail = view.findViewById(R.id.tvProfileEmail);
         ivProfileImage = view.findViewById(R.id.ivProfileImage);
         profileImageCard = view.findViewById(R.id.profileImageCard);
 
-        String name = userManager.getName();
-        String username = userManager.getUsername();
-        String email = userManager.getEmail();
-
-        if (TextUtils.isEmpty(name)) name = "Guest";
-        if (TextUtils.isEmpty(email)) email = "No email";
-        if (TextUtils.isEmpty(username)) username = "guest";
-
-        tvProfileName.setText(name);
-        tvProfileUsername.setText("@" + username);
-        tvProfileEmail.setText(email);
+        hydrateProfileHeader(userManager.getName(), userManager.getUsername(), userManager.getEmail());
 
         MaterialCardView btnManageAccountSecrets = view.findViewById(R.id.btnManageAccountSecrets);
         if (btnManageAccountSecrets != null) {
@@ -118,18 +112,31 @@ public class ProfileFragment extends Fragment {
         return view;
     }
 
+    @Override
+    public void onResume() {
+        super.onResume();
+        loadCurrentUserProfile();
+    }
+
     private void loadCurrentUserProfile() {
         apiService.getCurrentUser().enqueue(new Callback<CurrentUserResponse>() {
             @Override
             public void onResponse(Call<CurrentUserResponse> call, Response<CurrentUserResponse> response) {
                 if (!isAdded()) return;
-                if (response.isSuccessful()
-                        && response.body() != null
-                        && response.body().getUser() != null
-                        && response.body().getUser().getProfilePictureUrl() != null
-                        && !response.body().getUser().getProfilePictureUrl().trim().isEmpty()) {
+                if (response.isSuccessful() && response.body() != null && response.body().getUser() != null) {
+                    User user = response.body().getUser();
+                    UserManager userManager = UserManager.getInstance();
+                    userManager.setName(user.getName());
+                    userManager.setUsername(user.getUsername());
+                    userManager.setEmail(user.getEmail());
+                    hydrateProfileHeader(user.getName(), user.getUsername(), user.getEmail());
+
+                    if (user.getProfilePictureUrl() == null || user.getProfilePictureUrl().trim().isEmpty()) {
+                        ivProfileImage.setImageResource(R.drawable.ic_profile);
+                        return;
+                    }
                     Glide.with(requireContext())
-                            .load(response.body().getUser().getProfilePictureUrl())
+                            .load(user.getProfilePictureUrl())
                             .circleCrop()
                             .placeholder(R.drawable.ic_profile)
                             .into(ivProfileImage);
@@ -144,6 +151,15 @@ public class ProfileFragment extends Fragment {
                 ivProfileImage.setImageResource(R.drawable.ic_profile);
             }
         });
+    }
+
+    private void hydrateProfileHeader(String name, String username, String email) {
+        String safeName = TextUtils.isEmpty(name) ? "Guest" : name;
+        String safeUsername = TextUtils.isEmpty(username) ? "guest" : username;
+        String safeEmail = TextUtils.isEmpty(email) ? "No email" : email;
+        tvProfileName.setText(safeName);
+        tvProfileUsername.setText("@" + safeUsername);
+        tvProfileEmail.setText(safeEmail);
     }
 
     private void uploadProfileImage(Uri uri) {
