@@ -5,6 +5,7 @@ public class BackendProject {
     private String name;
     private String screenshotUrl;
     private String previewStatus;
+    private String previewUrl;
     private String createdAt;
     private String updatedAt;
 
@@ -19,6 +20,9 @@ public class BackendProject {
 
     public String getPreviewStatus() { return previewStatus; }
     public void setPreviewStatus(String previewStatus) { this.previewStatus = previewStatus; }
+
+    public String getPreviewUrl() { return previewUrl; }
+    public void setPreviewUrl(String previewUrl) { this.previewUrl = previewUrl; }
 
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }

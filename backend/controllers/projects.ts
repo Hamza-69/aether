@@ -103,7 +103,17 @@ projectsRouter.get("/:projectId", async (req, res) => {
       res.status(404).json({ error: "Project not found" })
       return
     }
-    res.status(200).json({ project })
+    const latestPreview = await prisma.preview.findFirst({
+      where: { projectId, url: { not: null } },
+      orderBy: { createdAt: "desc" },
+      select: { url: true },
+    })
+    res.status(200).json({
+      project: {
+        ...project,
+        previewUrl: latestPreview?.url ?? null,
+      },
+    })
   } catch (error) {
     console.error("[projectsRouter.GET /:projectId] Failed:", error)
     res.status(500).json({ error: "Failed to fetch project" })

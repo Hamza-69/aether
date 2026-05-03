@@ -58,6 +58,9 @@ public interface ApiService {
     @GET("projects")
     Call<ProjectsResponse> getProjects();
 
+    @GET("projects/{projectId}")
+    Call<ProjectWrapperResponse> getProject(@Path("projectId") String projectId);
+
     @POST("projects")
     Call<ProjectWrapperResponse> createProject(@Body CreateProjectRequest createProjectRequest);
 

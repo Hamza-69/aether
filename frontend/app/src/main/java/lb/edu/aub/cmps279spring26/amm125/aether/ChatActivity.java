@@ -17,6 +17,9 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.content.res.ColorStateList;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -39,9 +42,11 @@ import java.util.Map;
 import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiClient;
 import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiService;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.ActionResponse;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.BackendProject;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.GenerateKeystoreRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.MessagesResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.ProjectMessage;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.ProjectWrapperResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretSummary;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretsResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretsWriteResponse;
@@ -68,7 +73,10 @@ public class ChatActivity extends AppCompatActivity {
     private MaterialCardView btnSend;
     private View inputContainer;
     private View previewContainer;
+    private WebView webPreview;
+    private TextView tvPreviewHint;
     private MaterialButton btnChatToggle, btnViewToggle;
+    private String currentPreviewUrl;
     private String projectTitle;
     private String projectDesc;
     private String projectStatus;
@@ -115,8 +123,19 @@ public class ChatActivity extends AppCompatActivity {
         btnSend = findViewById(R.id.btnSendChat);
         inputContainer = findViewById(R.id.inputContainer);
         previewContainer = findViewById(R.id.previewContainer);
+        webPreview = findViewById(R.id.webPreview);
+        tvPreviewHint = findViewById(R.id.tvPreviewHint);
         btnChatToggle = findViewById(R.id.btnChatToggle);
         btnViewToggle = findViewById(R.id.btnViewToggle);
+
+        btnChatToggle.setCheckable(false);
+        btnViewToggle.setCheckable(false);
+        btnChatToggle.setRippleColor(ColorStateList.valueOf(Color.TRANSPARENT));
+        btnViewToggle.setRippleColor(ColorStateList.valueOf(Color.TRANSPARENT));
+
+        webPreview.setWebViewClient(new WebViewClient());
+        webPreview.getSettings().setJavaScriptEnabled(true);
+        webPreview.getSettings().setDomStorageEnabled(true);
 
         messageList = new ArrayList<>();
         adapter = new ChatAdapter(messageList);
@@ -125,6 +144,7 @@ public class ChatActivity extends AppCompatActivity {
 
         btnChatToggle.setOnClickListener(v -> showChatMode());
         btnViewToggle.setOnClickListener(v -> showViewMode());
+        showChatMode();
 
         btnSend.setOnClickListener(v -> {
             String text = etMessage.getText().toString().trim();
@@ -136,6 +156,7 @@ public class ChatActivity extends AppCompatActivity {
         if (!TextUtils.isEmpty(projectId)) {
             loadMessages();
             startRealtimeStreams();
+            hydratePreviewUrl();
         } else if (!TextUtils.isEmpty(projectDesc)) {
             messageList.add(new ChatMessage(projectDesc, true));
             adapter.notifyItemInserted(messageList.size() - 1);
@@ -198,11 +219,17 @@ public class ChatActivity extends AppCompatActivity {
         }
 
         if (STREAM_PREVIEW.equals(streamType)) {
+            String topLevelUrl = payload.optString("url", "");
+            if (!TextUtils.isEmpty(topLevelUrl)) {
+                loadPreviewUrl(topLevelUrl);
+            }
+
             JSONObject preview = payload.optJSONObject("preview");
             if (preview != null) {
                 String previewUrl = preview.optString("url", "");
                 if (!TextUtils.isEmpty(previewUrl)) {
                     showSuccessSnackbar("Preview ready\n" + previewUrl);
+                    loadPreviewUrl(previewUrl);
                     projectStatus = "Published";
                     updateStatusUI();
                 }
@@ -327,7 +354,7 @@ public class ChatActivity extends AppCompatActivity {
                 return;
             }
             connectRealtimeForType(STREAM_PREVIEW);
-            triggerAction("Preview requested", apiService.runPreview(projectId));
+            triggerPreviewAction("Preview requested", apiService.runPreview(projectId));
             showViewMode();
         });
 
@@ -338,7 +365,7 @@ public class ChatActivity extends AppCompatActivity {
                 return;
             }
             connectRealtimeForType(STREAM_PREVIEW);
-            triggerAction("Preview restart requested", apiService.restartPreview(projectId));
+            triggerPreviewAction("Preview restart requested", apiService.restartPreview(projectId));
             showViewMode();
         });
 
@@ -526,6 +553,32 @@ public class ChatActivity extends AppCompatActivity {
         triggerAction(successMessage, call, null);
     }
 
+    private void triggerPreviewAction(String successMessage, Call<ActionResponse> call) {
+        call.enqueue(new Callback<ActionResponse>() {
+            @Override
+            public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
+                if (!response.isSuccessful()) {
+                    showInfoSnackbar("Action failed (" + response.code() + ")");
+                    return;
+                }
+
+                ActionResponse body = response.body();
+                String previewUrl = body != null ? body.getUrl() : null;
+                if (!TextUtils.isEmpty(previewUrl)) {
+                    loadPreviewUrl(previewUrl);
+                    showSuccessSnackbar(successMessage + "\n" + previewUrl);
+                } else {
+                    showSuccessSnackbar(successMessage);
+                }
+            }
+
+            @Override
+            public void onFailure(Call<ActionResponse> call, Throwable t) {
+                showInfoSnackbar("Could not reach backend");
+            }
+        });
+    }
+
     private void triggerAction(String successMessage, Call<ActionResponse> call, Runnable onSuccess) {
         call.enqueue(new Callback<ActionResponse>() {
             @Override
@@ -597,11 +650,7 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void showChatMode() {
-        btnChatToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
-        btnChatToggle.setTextColor(Color.parseColor("#1A1A1A"));
-
-        btnViewToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.TRANSPARENT));
-        btnViewToggle.setTextColor(Color.parseColor("#757575"));
+        setToggleState(true);
 
         rvChat.setVisibility(View.VISIBLE);
         inputContainer.setVisibility(View.VISIBLE);
@@ -609,15 +658,73 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void showViewMode() {
-        btnViewToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
-        btnViewToggle.setTextColor(Color.parseColor("#1A1A1A"));
-
-        btnChatToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.TRANSPARENT));
-        btnChatToggle.setTextColor(Color.parseColor("#757575"));
+        setToggleState(false);
 
         rvChat.setVisibility(View.GONE);
         inputContainer.setVisibility(View.GONE);
         previewContainer.setVisibility(View.VISIBLE);
+
+        if (TextUtils.isEmpty(currentPreviewUrl) && !TextUtils.isEmpty(projectId)) {
+            hydratePreviewUrl();
+        }
+    }
+
+    private void setToggleState(boolean chatActive) {
+        int activeBg = Color.WHITE;
+        int inactiveBg = Color.parseColor("#00000000");
+        int activeText = Color.parseColor("#1A1A1A");
+        int inactiveText = Color.parseColor("#757575");
+
+        btnChatToggle.setSelected(chatActive);
+        btnViewToggle.setSelected(!chatActive);
+
+        btnChatToggle.setBackgroundTintList(null);
+        btnViewToggle.setBackgroundTintList(null);
+        btnChatToggle.setBackgroundColor(chatActive ? activeBg : inactiveBg);
+        btnViewToggle.setBackgroundColor(chatActive ? inactiveBg : activeBg);
+
+        btnChatToggle.setTextColor(chatActive ? activeText : inactiveText);
+        btnViewToggle.setTextColor(chatActive ? inactiveText : activeText);
+
+        btnChatToggle.setAlpha(chatActive ? 1f : 0.75f);
+        btnViewToggle.setAlpha(chatActive ? 0.75f : 1f);
+
+        btnChatToggle.setStrokeWidth(0);
+        btnViewToggle.setStrokeWidth(0);
+        btnChatToggle.setChecked(false);
+        btnViewToggle.setChecked(false);
+    }
+
+    private void loadPreviewUrl(String rawUrl) {
+        if (TextUtils.isEmpty(rawUrl)) return;
+        String url = rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
+                ? rawUrl
+                : "https://" + rawUrl;
+        currentPreviewUrl = url;
+        showViewMode();
+        tvPreviewHint.setText(url);
+        webPreview.loadUrl(url);
+    }
+
+    private void hydratePreviewUrl() {
+        apiService.getProject(projectId).enqueue(new Callback<ProjectWrapperResponse>() {
+            @Override
+            public void onResponse(Call<ProjectWrapperResponse> call, Response<ProjectWrapperResponse> response) {
+                if (!response.isSuccessful() || response.body() == null) {
+                    return;
+                }
+                BackendProject project = response.body().getProject();
+                String url = project != null ? project.getPreviewUrl() : null;
+                if (!TextUtils.isEmpty(url)) {
+                    loadPreviewUrl(url);
+                }
+            }
+
+            @Override
+            public void onFailure(Call<ProjectWrapperResponse> call, Throwable t) {
+                // Non-fatal: realtime/manual actions can still populate preview later.
+            }
+        });
     }
 
     private void sendMessage(String text) {
