@@ -8,6 +8,7 @@ import { codeAgent } from "../agent/agent"
 import { AgentState } from "../agent/agent"
 import {
   uploadState,
+  uploadScreenshot,
   getStateDownloadUrl,
   ZERO_STATE_FRONTEND_KEY,
   ZERO_STATE_BACKEND_KEY,
@@ -300,6 +301,65 @@ export const codeAgentFunction = inngest.createFunction(
         { preview: preview as any, previewStatus: "RUNNING" },
         streamId,
       )
+    })
+
+    await step.run("capture-screenshot", async () => {
+      await publishFunction(
+        publish,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
+        "ai",
+        { message: "Capturing screenshot..." },
+        streamId,
+      )
+
+      try {
+        const sandbox = await getSandbox(SandboxId)
+
+        const playwrightScript = [
+          `const { chromium } = require('playwright');`,
+          `(async () => {`,
+          `  const browser = await chromium.launch({ headless: true });`,
+          `  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });`,
+          `  await page.goto('http://localhost:8081', { waitUntil: 'load', timeout: 30000 });`,
+          `  try { await page.waitForSelector('#root', { timeout: 10000 }); } catch (_) {}`,
+          `  await new Promise(r => setTimeout(r, 3000));`,
+          `  await page.screenshot({ path: '/tmp/screenshot.png', fullPage: false });`,
+          `  await browser.close();`,
+          `})();`,
+        ].join(" ")
+
+        const result = await sandbox.commands.run(
+          `NODE_PATH=/usr/lib/node_modules PLAYWRIGHT_BROWSERS_PATH=/ms-playwright node -e '${playwrightScript.replace(/'/g, "'\\''")}' 2>&1`,
+          { timeoutMs: 60_000 },
+        )
+
+        if (result.exitCode !== 0) {
+          console.warn(`[capture-screenshot] Playwright failed (exit ${result.exitCode}): ${result.stderr}`)
+          return
+        }
+
+        const pngBytes = (await sandbox.files.read("/tmp/screenshot.png", {
+          format: "bytes",
+        })) as Uint8Array
+
+        const screenshotUrl = await uploadScreenshot(event.data.projectId, pngBytes)
+
+        await prisma.project.update({
+          where: { id: event.data.projectId },
+          data: { screenshotUrl },
+        })
+
+        await publishFunction(
+          publish,
+          "project_code_agent:" + userId + ":" + event.data.projectId,
+          "ai",
+          { screenshotUrl },
+          streamId,
+        )
+      } catch (err) {
+        // Non-fatal — the code agent run still succeeds
+        console.warn("[capture-screenshot] Failed:", err)
+      }
     })
 
     await step.run("save-result", async () => {

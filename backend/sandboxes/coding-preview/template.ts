@@ -32,7 +32,10 @@ ENV FLY_INSTALL=/usr/local/fly
 ENV PATH="/usr/local/fly/bin:$PATH"
 
 # Playwright + Chromium for in-sandbox screenshots
-RUN npm install -g playwright && npx playwright install-deps && npx playwright install chromium
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npm install -g playwright && npx playwright install-deps && npx playwright install chromium \\
+    && chmod -R 777 /ms-playwright
+ENV NODE_PATH=/usr/lib/node_modules
 
 WORKDIR /app
 

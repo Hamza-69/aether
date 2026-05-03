@@ -224,7 +224,7 @@ export const previewProjectFunction = inngest.createFunction(
           `(async () => {`,
           `  const browser = await chromium.launch({ headless: true });`,
           `  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });`,
-          `  await page.goto('http://localhost:8081', { waitUntil: 'networkidle', timeout: 30000 });`,
+          `  await page.goto('http://localhost:8081', { waitUntil: 'load', timeout: 30000 });`,
           `  try { await page.waitForSelector('#root', { timeout: 10000 }); } catch (_) {}`,
           `  await new Promise(r => setTimeout(r, 3000));`,
           `  await page.screenshot({ path: '/tmp/screenshot.png', fullPage: false });`,
@@ -233,7 +233,7 @@ export const previewProjectFunction = inngest.createFunction(
         ].join(" ")
 
         const result = await sandbox.commands.run(
-          `node -e '${playwrightScript.replace(/'/g, "'\\''")}' 2>&1`,
+          `NODE_PATH=/usr/lib/node_modules PLAYWRIGHT_BROWSERS_PATH=/ms-playwright node -e '${playwrightScript.replace(/'/g, "'\\''")}' 2>&1`,
           { timeoutMs: 60_000 },
         )
 

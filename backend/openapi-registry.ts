@@ -91,6 +91,479 @@ registry.registerPath({
   },
 })
 
+// ── Auth: Sign Up ───────────────────────────────────────────────────────────
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/signup",
+  tags: ["Auth"],
+  summary: "Start sign-up (sends OTP to email)",
+  description:
+    "Validates the name, username, email, and password, then sends a 6-digit OTP code to the provided email address. Returns a challengeId that must be used in the verify step. The code expires in 10 minutes.",
+  responses: {
+    200: {
+      description: "OTP sent",
+      content: {
+        "application/json": {
+          schema: z.object({
+            message: z.string(),
+            challengeId: z.string(),
+            expiresAt: z.number(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: "Missing required fields",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description: "Email already in use or username taken",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              name: z.string().openapi({ example: "Jane Doe" }),
+              username: z.string().openapi({ example: "janedoe" }),
+              email: z.string().email().openapi({ example: "jane@example.com" }),
+              password: z.string().min(6).openapi({ example: "securePassword123" }),
+            })
+            .openapi("SignupBody"),
+        },
+      },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/signup/verify",
+  tags: ["Auth"],
+  summary: "Verify sign-up OTP and create the user account",
+  description:
+    "Validates the OTP code against the challenge. On success, creates the user in the database and returns a JWT token.",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              challengeId: z.string().openapi({ example: "1714700000_abc123" }),
+              code: z.string().openapi({ example: "123456" }),
+            })
+            .openapi("VerifyOtpBody"),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "User created and authenticated",
+      content: {
+        "application/json": {
+          schema: z.object({
+            message: z.string(),
+            token: z.string(),
+            user: UserSchema,
+          }),
+        },
+      },
+    },
+    400: {
+      description: "Invalid or expired code / challenge",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description: "Email or username was taken between initiation and verification",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+// ── Auth: Sign In ───────────────────────────────────────────────────────────
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/signin",
+  tags: ["Auth"],
+  summary: "Start sign-in (sends OTP to email)",
+  description:
+    "Validates email and password, then sends a 6-digit OTP code to the user's email. Returns a challengeId for the verify step.",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              email: z.string().email().openapi({ example: "jane@example.com" }),
+              password: z.string().openapi({ example: "securePassword123" }),
+            })
+            .openapi("SigninBody"),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "OTP sent",
+      content: {
+        "application/json": {
+          schema: z.object({
+            message: z.string(),
+            challengeId: z.string(),
+            expiresAt: z.number(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: "Missing required fields",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Invalid email or password",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/signin/verify",
+  tags: ["Auth"],
+  summary: "Verify sign-in OTP and receive JWT token",
+  description:
+    "Validates the OTP code against the sign-in challenge. On success returns a JWT token and user info.",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z.object({
+            challengeId: z.string().openapi({ example: "1714700000_abc123" }),
+            code: z.string().openapi({ example: "123456" }),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Authenticated",
+      content: {
+        "application/json": {
+          schema: z.object({
+            message: z.string(),
+            token: z.string(),
+            user: UserSchema,
+          }),
+        },
+      },
+    },
+    400: {
+      description: "Invalid or expired code / challenge",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "User no longer exists",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+// ── Auth: Forgot / Reset Password ───────────────────────────────────────────
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/password/forgot",
+  tags: ["Auth"],
+  summary: "Request a password-reset OTP",
+  description:
+    "Sends a 6-digit OTP to the email address if a matching user exists. Returns a challengeId for the verify step.",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              email: z.string().email().openapi({ example: "jane@example.com" }),
+            })
+            .openapi("ForgotPasswordBody"),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Reset OTP sent",
+      content: {
+        "application/json": {
+          schema: z.object({
+            message: z.string(),
+            challengeId: z.string(),
+            expiresAt: z.number(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: "Email is required",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "No user found with this email",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/password/verify",
+  tags: ["Auth"],
+  summary: "Verify the password-reset OTP",
+  description:
+    "Confirms the OTP is correct. Marks the challenge as verified so the final reset step can proceed.",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z.object({
+            challengeId: z.string().openapi({ example: "1714700000_abc123" }),
+            code: z.string().openapi({ example: "123456" }),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Code verified — proceed to reset",
+      content: {
+        "application/json": {
+          schema: z.object({
+            message: z.string(),
+            challengeId: z.string(),
+            expiresAt: z.number(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: "Invalid or expired code / challenge",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/password/reset",
+  tags: ["Auth"],
+  summary: "Set a new password after OTP verification",
+  description:
+    "Requires a verified challengeId from the previous step. Updates the user's password.",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              challengeId: z.string().openapi({ example: "1714700000_abc123" }),
+              password: z.string().min(6).openapi({ example: "newSecurePassword456" }),
+            })
+            .openapi("ResetPasswordBody"),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Password changed",
+      content: {
+        "application/json": {
+          schema: z.object({ message: z.string() }),
+        },
+      },
+    },
+    400: {
+      description: "Invalid challenge, expired, not verified, or weak password",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+// ── Auth: Change Password (authenticated) ───────────────────────────────────
+
+registry.registerPath({
+  method: "put",
+  path: "/api/auth/me/password",
+  tags: ["Auth"],
+  summary: "Change password for the current user",
+  description:
+    "Requires the current password for verification. New password must be at least 6 characters and different from the current one.",
+  security: protectedRoute,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              currentPassword: z.string().openapi({ example: "oldPassword123" }),
+              newPassword: z.string().min(6).openapi({ example: "newPassword456" }),
+            })
+            .openapi("ChangePasswordBody"),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Password changed",
+      content: {
+        "application/json": {
+          schema: z.object({ message: z.string() }),
+        },
+      },
+    },
+    400: {
+      description: "Missing fields, weak password, or same as current",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Current password is incorrect or not authenticated",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "User not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+// ── Auth: Profile Picture ───────────────────────────────────────────────────
+
+registry.registerPath({
+  method: "put",
+  path: "/api/auth/me/profile-picture",
+  tags: ["Auth"],
+  summary: "Upload or replace profile picture",
+  description:
+    "Accepts a base64-encoded image (max 5 MB). Supported types: image/png, image/jpeg, image/webp, image/gif. The image is uploaded to S3 and the URL is returned.",
+  security: protectedRoute,
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              image: z.string().openapi({ description: "Base64-encoded image data" }),
+              mimeType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]).openapi({ example: "image/png" }),
+            })
+            .openapi("UploadProfilePictureBody"),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Profile picture updated",
+      content: {
+        "application/json": {
+          schema: z.object({
+            message: z.string(),
+            profilePictureUrl: z.string().url(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: "Missing fields, unsupported type, or image too large",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/auth/me/profile-picture",
+  tags: ["Auth"],
+  summary: "Remove profile picture",
+  description: "Clears the user's profile picture from their account.",
+  security: protectedRoute,
+  responses: {
+    200: {
+      description: "Profile picture removed",
+      content: {
+        "application/json": {
+          schema: z.object({ message: z.string() }),
+        },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    500: {
+      description: "Internal server error",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+})
+
 // ── Projects ────────────────────────────────────────────────────────────────
 
 registry.registerPath({
