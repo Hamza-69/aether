@@ -9,7 +9,6 @@ import { AgentState } from "./agent"
 export const conversationHistoryAdapter: HistoryConfig<AgentState> = {
   // 1. Create new conversation threads (or ensure they exist)
   createThread: ({ state }) => {
-    console.log(`[conversationHistoryAdapter/createThread] Creating/ensuring thread exists: ${state.threadId}`)
     // No need to do anything here since threads are managed externally
     return { threadId: state.threadId as string }
   },
@@ -79,14 +78,12 @@ export const conversationHistoryAdapter: HistoryConfig<AgentState> = {
 
   // 3. Save user message immediately (before agents run)
   appendUserMessage: async (_) => {
-    console.log(`[conversationHistoryAdapter/appendUserMessage] Called (no-op, messages saved externally)`)
     // User messages are already saved externally, so no action needed here
     return
   },
 
   // 4. Save agent results after the run
   appendResults: async (_) => {
-    console.log(`[conversationHistoryAdapter/appendResults] Called (no-op, results saved in function)`)
     // Agent messages are already saved in function, so no action needed here
     return
   },

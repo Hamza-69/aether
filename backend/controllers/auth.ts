@@ -243,83 +243,6 @@ authRouter.post("/signin", async (req, res) => {
       })
     }
 
-    const code = generateOtpCode()
-    const challengeId = generateChallengeId()
-    const expiresAt = Date.now() + OTP_EXPIRES_IN_MS
-
-    challenges.set(challengeId, {
-      type: "signin",
-      email: normalizedEmail,
-      code,
-      expiresAt,
-      userId: user.id,
-    })
-
-    await sendOtpEmail(normalizedEmail, code)
-
-    return res.status(200).json({
-      message: "Verification code sent",
-      challengeId,
-      expiresAt,
-    })
-  } catch (error) {
-    console.error("Signin error:", error)
-
-    return res.status(500).json({
-      message: "Server error during signin",
-    })
-  }
-})
-
-authRouter.post("/signin/verify", async (req, res) => {
-  try {
-    const { challengeId, code } = req.body
-
-    if (!challengeId || !code) {
-      return res.status(400).json({
-        message: "challengeId and code are required",
-      })
-    }
-
-    const challenge = challenges.get(challengeId)
-    if (!challenge || challenge.type !== "signin") {
-      return res.status(400).json({
-        message: "Invalid verification challenge",
-      })
-    }
-
-    if (challenge.expiresAt < Date.now()) {
-      challenges.delete(challengeId)
-      return res.status(400).json({
-        message: "Verification code expired",
-      })
-    }
-
-    if (challenge.code !== code) {
-      return res.status(400).json({
-        message: "Invalid verification code",
-      })
-    }
-
-    if (!challenge.userId) {
-      challenges.delete(challengeId)
-      return res.status(400).json({
-        message: "Invalid verification challenge",
-      })
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: challenge.userId },
-    })
-
-    if (!user) {
-      challenges.delete(challengeId)
-      return res.status(404).json({
-        message: "User not found",
-      })
-    }
-
-    challenges.delete(challengeId)
     const token = createToken(user)
 
     return res.status(200).json({
@@ -333,10 +256,10 @@ authRouter.post("/signin/verify", async (req, res) => {
       },
     })
   } catch (error) {
-    console.error("Signin verify error:", error)
+    console.error("Signin error:", error)
 
     return res.status(500).json({
-      message: "Server error during signin verification",
+      message: "Server error during signin",
     })
   }
 })

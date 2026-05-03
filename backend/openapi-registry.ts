@@ -201,9 +201,9 @@ registry.registerPath({
   method: "post",
   path: "/api/auth/signin",
   tags: ["Auth"],
-  summary: "Start sign-in (sends OTP to email)",
+  summary: "Sign in with email and password",
   description:
-    "Validates email and password, then sends a 6-digit OTP code to the user's email. Returns a challengeId for the verify step.",
+    "Validates email and password, and on success returns a JWT token and user info.",
   request: {
     body: {
       required: true,
@@ -221,13 +221,13 @@ registry.registerPath({
   },
   responses: {
     200: {
-      description: "OTP sent",
+      description: "Authenticated",
       content: {
         "application/json": {
           schema: z.object({
             message: z.string(),
-            challengeId: z.string(),
-            expiresAt: z.number(),
+            token: z.string(),
+            user: UserSchema,
           }),
         },
       },
@@ -247,53 +247,6 @@ registry.registerPath({
   },
 })
 
-registry.registerPath({
-  method: "post",
-  path: "/api/auth/signin/verify",
-  tags: ["Auth"],
-  summary: "Verify sign-in OTP and receive JWT token",
-  description:
-    "Validates the OTP code against the sign-in challenge. On success returns a JWT token and user info.",
-  request: {
-    body: {
-      required: true,
-      content: {
-        "application/json": {
-          schema: z.object({
-            challengeId: z.string().openapi({ example: "1714700000_abc123" }),
-            code: z.string().openapi({ example: "123456" }),
-          }),
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: "Authenticated",
-      content: {
-        "application/json": {
-          schema: z.object({
-            message: z.string(),
-            token: z.string(),
-            user: UserSchema,
-          }),
-        },
-      },
-    },
-    400: {
-      description: "Invalid or expired code / challenge",
-      content: { "application/json": { schema: ErrorSchema } },
-    },
-    404: {
-      description: "User no longer exists",
-      content: { "application/json": { schema: ErrorSchema } },
-    },
-    500: {
-      description: "Internal server error",
-      content: { "application/json": { schema: ErrorSchema } },
-    },
-  },
-})
 
 // ── Auth: Forgot / Reset Password ───────────────────────────────────────────
 

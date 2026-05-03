@@ -142,7 +142,11 @@ export const codeAgentFunction = inngest.createFunction(
       streamId,
       projectId: event.data.projectId,
       userId,
-    })
+    },
+    {
+      threadId: event.data.projectId
+    }
+  )
 
     const network = createNetwork<AgentState>({
       name: "coding-agent-network",

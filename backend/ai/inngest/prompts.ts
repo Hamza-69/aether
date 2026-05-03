@@ -229,6 +229,7 @@ When the task is complete, end your final message with EXACTLY one of:
   </error>
 
 Do not output <task_summary> or <error> until the implementation is fully done and verified.
+IMPORTANT: You MUST ALWAYS use the <task_summary> or <error> tags in your final message, else the agent loop will never break.
 `
 
 export const FRAGMENT_TITLE_PROMPT = `
