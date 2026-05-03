@@ -65,6 +65,8 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
 
         updateStatusUI(holder, project.getStatus());
         holder.authorContainer.setVisibility(View.GONE);
+        holder.optionsCard.setVisibility(View.GONE);
+        holder.optionsCard.setOnClickListener(null);
 
         if (project.getScreenshotUrl() != null && !project.getScreenshotUrl().trim().isEmpty()) {
             Glide.with(holder.itemView.getContext())
@@ -85,9 +87,6 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
             v.getContext().startActivity(intent);
         });
 
-        holder.optionsCard.setOnClickListener(v -> {
-            showEnhancedOptionsMenu(v, project, position);
-        });
     }
 
     private Bitmap createInitialsBitmap(String title) {

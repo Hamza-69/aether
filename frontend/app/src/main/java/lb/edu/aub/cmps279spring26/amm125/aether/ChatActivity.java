@@ -534,14 +534,52 @@ public class ChatActivity extends AppCompatActivity {
         LinearLayout optExport = dialog.findViewById(R.id.optionExport);
         LinearLayout optSecrets = dialog.findViewById(R.id.optionSecrets);
         LinearLayout optDelete = dialog.findViewById(R.id.optionDelete);
+        ImageView ivPublishIcon = dialog.findViewById(R.id.ivPublishIcon);
+        TextView tvPublishText = dialog.findViewById(R.id.tvPublishText);
         TextView tvPreviewRestart = dialog.findViewById(R.id.tvUpdateText);
         TextView tvExport = optExport != null ? (TextView) optExport.getChildAt(1) : null;
+        boolean isPublished = "Published".equalsIgnoreCase(projectStatus);
+
         if (optDeploy != null) optDeploy.setVisibility(View.GONE);
         if (optKeystore != null) optKeystore.setVisibility(View.GONE);
-        if (optPreview != null) optPreview.setVisibility(View.GONE);
+        if (optPreview != null) optPreview.setVisibility(View.VISIBLE);
+        if (tvPublishText != null) tvPublishText.setText(isPublished ? "Unpublish" : "Publish");
+        if (ivPublishIcon != null) {
+            ivPublishIcon.setImageResource(isPublished ? R.drawable.ic_back : R.drawable.ic_sparkle);
+            ivPublishIcon.setImageTintList(ColorStateList.valueOf(isPublished ? Color.GRAY : Color.parseColor("#00BFA5")));
+        }
         if (tvPreviewRestart != null) tvPreviewRestart.setText("Preview");
         if (tvExport != null) tvExport.setText("Export");
         optUpdateVisible(optPreviewRestart, true);
+
+        if (optPreview != null) {
+            optPreview.setOnClickListener(view -> {
+                dialog.dismiss();
+                if (TextUtils.isEmpty(projectId)) {
+                    showInfoSnackbar("This project is not linked to backend yet");
+                    return;
+                }
+                if (isPublished) {
+                    triggerAction("Project unpublished and removed from Discover", apiService.unpublishProject(projectId), () -> {
+                        projectStatus = "Not Published";
+                        if (currentProject != null) {
+                            currentProject.setStatus(projectStatus);
+                            currentProject.setHasUnpublishedChanges(false);
+                        }
+                        updateStatusUI();
+                    });
+                } else {
+                    triggerAction("Project published successfully!", apiService.publishProject(projectId), () -> {
+                        projectStatus = "Published";
+                        if (currentProject != null) {
+                            currentProject.setStatus(projectStatus);
+                            currentProject.setHasUnpublishedChanges(false);
+                        }
+                        updateStatusUI();
+                    });
+                }
+            });
+        }
 
         optPreviewRestart.setOnClickListener(view -> {
             dialog.dismiss();
