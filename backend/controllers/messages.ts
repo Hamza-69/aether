@@ -29,6 +29,13 @@ messagesRouter.get("/", async (req, res) => {
             backendTarKey: true,
           },
         },
+        stream: {
+          include: {
+            streamChunks: {
+              orderBy: { createdAt: "asc" },
+            },
+          },
+        },
       },
     })
     res.status(200).json({ messages })

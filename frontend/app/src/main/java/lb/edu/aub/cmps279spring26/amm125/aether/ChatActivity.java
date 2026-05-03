@@ -33,6 +33,8 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.snackbar.BaseTransientBottomBar;
 import com.google.android.material.snackbar.Snackbar;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 
 import org.json.JSONObject;
 
@@ -91,6 +93,7 @@ public class ChatActivity extends AppCompatActivity {
     private int projectIndex = -1;
     private boolean previewErrorShown = false;
     private boolean previewRecoveryInProgress = false;
+    private String activeAgentMessageId;
     private final ApiService apiService = ApiClient.getApiService();
     private final Map<String, RealtimeClient> realtimeClients = new HashMap<>();
 
@@ -230,6 +233,11 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void handleRealtimePayload(String streamType, JSONObject payload) {
+        if (STREAM_CODE_AGENT.equals(streamType)) {
+            handleCodeAgentPayload(payload);
+            return;
+        }
+
         String message = payload.optString("message", "");
         boolean done = payload.optBoolean("done", false);
         boolean error = payload.optBoolean("error", false);
@@ -264,6 +272,102 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
+    private void handleCodeAgentPayload(JSONObject payload) {
+        boolean done = payload.optBoolean("done", false);
+        boolean error = payload.optBoolean("error", false);
+
+        Object rawMessage = payload.opt("message");
+        if (rawMessage instanceof JSONObject) {
+            applyAgentMessageObject((JSONObject) rawMessage);
+        } else {
+            String progress = payload.optString("message", "");
+            appendAgentThinkingChunk(progress);
+        }
+
+        String tool = payload.optString("tool", "");
+        String explanation = payload.optString("explanation", "");
+        if (!TextUtils.isEmpty(tool) || !TextUtils.isEmpty(explanation)) {
+            String prefix = TextUtils.isEmpty(tool) ? "" : tool + ": ";
+            appendAgentThinkingChunk(prefix + explanation);
+        }
+
+        JSONObject preview = payload.optJSONObject("preview");
+        if (preview != null) {
+            String previewUrl = preview.optString("url", "");
+            if (!TextUtils.isEmpty(previewUrl)) {
+                showSuccessSnackbar("Preview ready\n" + previewUrl);
+                loadPreviewUrl(previewUrl);
+                projectStatus = "Published";
+                updateStatusUI();
+            }
+        }
+
+        if (payload.has("fragment")) {
+            appendAgentThinkingChunk("Saved code changes.");
+        }
+
+        if (error) {
+            appendAgentThinkingChunk("The agent run failed.");
+            showInfoSnackbar("CODE AGENT failed");
+        }
+
+        if (done) {
+            stopRealtimeForType(STREAM_CODE_AGENT);
+            loadMessages();
+        }
+    }
+
+    private void applyAgentMessageObject(JSONObject messageObject) {
+        String id = messageObject.optString("id", "");
+        String content = messageObject.optString("content", "");
+        boolean completed = messageObject.optBoolean("completed", false);
+        ChatMessage message = findChatMessageById(id);
+        if (message == null) {
+            message = new ChatMessage(id, content, false, completed, null);
+            messageList.add(message);
+            adapter.notifyItemInserted(messageList.size() - 1);
+        } else {
+            message.setText(content);
+            message.setCompleted(completed);
+            adapter.notifyItemChanged(messageList.indexOf(message));
+        }
+        activeAgentMessageId = TextUtils.isEmpty(id) ? activeAgentMessageId : id;
+        rvChat.scrollToPosition(messageList.size() - 1);
+    }
+
+    private void appendAgentThinkingChunk(String chunk) {
+        if (TextUtils.isEmpty(chunk) || "null".equalsIgnoreCase(chunk)) return;
+        ChatMessage message = findChatMessageById(activeAgentMessageId);
+        if (message == null) {
+            message = new ChatMessage(activeAgentMessageId, "", false, false, null);
+            messageList.add(message);
+            adapter.notifyItemInserted(messageList.size() - 1);
+        }
+        message.appendThinking(chunk);
+        int index = messageList.indexOf(message);
+        if (index >= 0) {
+            adapter.notifyItemChanged(index);
+            rvChat.scrollToPosition(index);
+        }
+    }
+
+    private ChatMessage findChatMessageById(String id) {
+        if (TextUtils.isEmpty(id)) return null;
+        for (ChatMessage message : messageList) {
+            if (id.equals(message.getId())) {
+                return message;
+            }
+        }
+        return null;
+    }
+
+    private void stopRealtimeForType(String streamType) {
+        RealtimeClient existing = realtimeClients.remove(streamType);
+        if (existing != null) {
+            existing.disconnect();
+        }
+    }
+
     private String formatStreamLabel(String streamType) {
         return streamType.replace("-", " ").toUpperCase(Locale.US);
     }
@@ -284,14 +388,27 @@ public class ChatActivity extends AppCompatActivity {
                 }
                 List<ProjectMessage> backendMessages = response.body().getMessages();
                 messageList.clear();
+                activeAgentMessageId = null;
+                ProjectMessage latestIncompleteAssistant = null;
                 for (ProjectMessage m : backendMessages) {
-                    if (m.getContent() == null || m.getContent().trim().isEmpty()) continue;
                     boolean isUser = "USER".equalsIgnoreCase(m.getRole());
-                    messageList.add(new ChatMessage(m.getContent(), isUser));
+                    boolean completed = !Boolean.FALSE.equals(m.getCompleted());
+                    String thinking = isUser ? null : buildThinkingText(m);
+                    String content = m.getContent();
+                    if (TextUtils.isEmpty(content) && isUser) continue;
+                    if (TextUtils.isEmpty(content) && !isUser && completed && TextUtils.isEmpty(thinking)) continue;
+                    messageList.add(new ChatMessage(m.getId(), content, isUser, completed, thinking));
+                    if (!isUser && !completed) {
+                        latestIncompleteAssistant = m;
+                    }
                 }
                 adapter.notifyDataSetChanged();
                 if (!messageList.isEmpty()) {
                     rvChat.scrollToPosition(messageList.size() - 1);
+                }
+                if (latestIncompleteAssistant != null) {
+                    activeAgentMessageId = latestIncompleteAssistant.getId();
+                    connectRealtimeForType(STREAM_CODE_AGENT);
                 }
             }
 
@@ -300,6 +417,55 @@ public class ChatActivity extends AppCompatActivity {
                 showInfoSnackbar("Could not reach backend");
             }
         });
+    }
+
+    private String buildThinkingText(ProjectMessage message) {
+        if (message.getStream() == null || message.getStream().getStreamChunks() == null) {
+            return null;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (ProjectMessage.StreamChunk chunk : message.getStream().getStreamChunks()) {
+            String text = streamChunkText(chunk.getData());
+            if (TextUtils.isEmpty(text)) continue;
+            if (sb.length() > 0) sb.append('\n');
+            sb.append(text);
+        }
+        return sb.length() == 0 ? null : sb.toString();
+    }
+
+    private String streamChunkText(JsonObject data) {
+        if (data == null) return "";
+
+        JsonElement message = data.get("message");
+        if (message != null) {
+            if (message.isJsonPrimitive()) {
+                return message.getAsString();
+            }
+            if (message.isJsonObject()) {
+                JsonObject messageObject = message.getAsJsonObject();
+                if (Boolean.TRUE.toString().equalsIgnoreCase(optString(messageObject, "completed"))) {
+                    return "";
+                }
+                return optString(messageObject, "content");
+            }
+        }
+
+        String tool = optString(data, "tool");
+        String explanation = optString(data, "explanation");
+        if (!TextUtils.isEmpty(tool) || !TextUtils.isEmpty(explanation)) {
+            return (TextUtils.isEmpty(tool) ? "" : tool + ": ") + explanation;
+        }
+
+        if (data.has("fragment")) return "Saved code changes.";
+        if (data.has("preview")) return "Preview is ready.";
+        return "";
+    }
+
+    private String optString(JsonObject object, String key) {
+        JsonElement value = object.get(key);
+        if (value == null || value.isJsonNull()) return "";
+        return value.isJsonPrimitive() ? value.getAsString() : "";
     }
 
     private void updateStatusUI() {
@@ -845,6 +1011,7 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
+        activeAgentMessageId = null;
         connectRealtimeForType(STREAM_CODE_AGENT);
         apiService.sendProjectMessage(projectId, new SendMessageRequest(text)).enqueue(new Callback<ActionResponse>() {
             @Override

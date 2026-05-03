@@ -4,6 +4,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import android.text.TextUtils;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 import java.util.List;
@@ -42,8 +43,33 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         if (holder instanceof UserViewHolder) {
             ((UserViewHolder) holder).tvMessage.setText(message.getText());
         } else {
-            ((AiViewHolder) holder).tvMessage.setText(message.getText());
+            AiViewHolder aiHolder = (AiViewHolder) holder;
+            String text = message.getText();
+            if (TextUtils.isEmpty(text) && !message.isCompleted()) {
+                text = "Thinking...";
+            }
+            aiHolder.tvMessage.setText(text);
+
+            String thinking = message.getThinkingText();
+            boolean showThinking = !TextUtils.isEmpty(thinking);
+            aiHolder.thinkingContainer.setVisibility(showThinking ? View.VISIBLE : View.GONE);
+            ViewGroup.MarginLayoutParams messageParams = (ViewGroup.MarginLayoutParams) aiHolder.tvMessage.getLayoutParams();
+            messageParams.topMargin = showThinking ? dp(aiHolder.tvMessage, 12) : 0;
+            aiHolder.tvMessage.setLayoutParams(messageParams);
+            aiHolder.tvThinkingToggle.setText(message.isThinkingExpanded() ? "Thinking v" : "Thinking >");
+            aiHolder.tvThinking.setVisibility(message.isThinkingExpanded() ? View.VISIBLE : View.GONE);
+            aiHolder.tvThinking.setText(showThinking ? thinking : "");
+            aiHolder.thinkingContainer.setOnClickListener(v -> {
+                int adapterPosition = holder.getBindingAdapterPosition();
+                if (adapterPosition == RecyclerView.NO_POSITION) return;
+                message.toggleThinkingExpanded();
+                notifyItemChanged(adapterPosition);
+            });
         }
+    }
+
+    private int dp(View view, int value) {
+        return Math.round(value * view.getResources().getDisplayMetrics().density);
     }
 
     @Override
@@ -53,10 +79,16 @@ public class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     static class AiViewHolder extends RecyclerView.ViewHolder {
         TextView tvMessage;
+        View thinkingContainer;
+        TextView tvThinkingToggle;
+        TextView tvThinking;
 
         AiViewHolder(@NonNull View itemView) {
             super(itemView);
             tvMessage = itemView.findViewById(R.id.tvAiMessage);
+            thinkingContainer = itemView.findViewById(R.id.thinkingContainer);
+            tvThinkingToggle = itemView.findViewById(R.id.tvThinkingToggle);
+            tvThinking = itemView.findViewById(R.id.tvThinkingChunks);
         }
     }
 
