@@ -88,9 +88,6 @@ public interface ApiService {
     @POST("projects/{projectId}/export-apk")
     Call<ActionResponse> exportApk(@Path("projectId") String projectId);
 
-    @POST("projects/{projectId}/preview")
-    Call<ActionResponse> runPreview(@Path("projectId") String projectId);
-
     @POST("projects/{projectId}/preview/restart")
     Call<ActionResponse> restartPreview(@Path("projectId") String projectId);
 
@@ -126,4 +123,7 @@ public interface ApiService {
 
     @DELETE("projects/{projectId}/secrets/{name}")
     Call<Void> deleteProjectSecret(@Path("projectId") String projectId, @Path("name") String name);
+
+    @DELETE("projects/{projectId}")
+    Call<ActionResponse> deleteProject(@Path("projectId") String projectId);
 }

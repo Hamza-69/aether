@@ -16,7 +16,6 @@ Align the Android frontend with the current backend APIs for projects, discover,
   - `POST /api/projects/{projectId}/deploy`
   - `POST /api/projects/{projectId}/keystore`
   - `POST /api/projects/{projectId}/export-apk`
-  - `POST /api/projects/{projectId}/preview`
   - `POST /api/projects/{projectId}/preview/restart`
 - Publish lifecycle:
   - `POST /api/projects/{projectId}/publish`
@@ -31,7 +30,7 @@ Align the Android frontend with the current backend APIs for projects, discover,
 - Core screens (`HomeFragment`, `DiscoverFragment`, `ChatActivity`, `ProfileFragment`) still run mostly local/mock data and are not fully wired to backend APIs.
 - `ApiService` now includes auth + projects/discover/messages/realtime + deploy/keystore/export/preview + profile picture endpoints.
 - `HomeFragment`, `DiscoverFragment`, and `ChatActivity` are now wired to backend list/message endpoints.
-- `ChatActivity` options now trigger deploy/keystore/export-apk/preview/restart preview APIs.
+- `ChatActivity` options now trigger deploy/keystore/export-apk/restart preview APIs.
 - `ProfileFragment` now supports backend profile picture upload/delete.
 
 ## Implementation Plan

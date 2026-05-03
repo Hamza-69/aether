@@ -23,6 +23,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.google.android.material.chip.Chip;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
@@ -54,6 +55,7 @@ public class HomeFragment extends Fragment {
 
     private View searchBarContainer;
     private EditText etSearch;
+    private SwipeRefreshLayout swipeRefreshProjects;
 
     @Nullable
     @Override
@@ -61,6 +63,7 @@ public class HomeFragment extends Fragment {
         View view = inflater.inflate(R.layout.fragment_home, container, false);
 
         rvProjects = view.findViewById(R.id.rvProjects);
+        swipeRefreshProjects = view.findViewById(R.id.swipeRefreshProjects);
         tvProjectCount = view.findViewById(R.id.tvProjectCount);
         cardEmptyHome = view.findViewById(R.id.cardEmptyHome);
         tvEmptyHomeTitle = view.findViewById(R.id.tvEmptyHomeTitle);
@@ -110,6 +113,10 @@ public class HomeFragment extends Fragment {
         });
 
         loadProjects();
+
+        if (swipeRefreshProjects != null) {
+            swipeRefreshProjects.setOnRefreshListener(this::loadProjects);
+        }
         return view;
     }
 
@@ -120,9 +127,13 @@ public class HomeFragment extends Fragment {
     }
 
     private void loadProjects() {
+        if (swipeRefreshProjects != null && !swipeRefreshProjects.isRefreshing()) {
+            swipeRefreshProjects.setRefreshing(true);
+        }
         apiService.getProjects().enqueue(new Callback<ProjectsResponse>() {
             @Override
             public void onResponse(Call<ProjectsResponse> call, Response<ProjectsResponse> response) {
+                if (swipeRefreshProjects != null) swipeRefreshProjects.setRefreshing(false);
                 if (!isAdded()) return;
                 if (!response.isSuccessful() || response.body() == null || response.body().getProjects() == null) {
                     Toast.makeText(requireContext(), "Failed to load projects", Toast.LENGTH_SHORT).show();
@@ -143,6 +154,7 @@ public class HomeFragment extends Fragment {
 
             @Override
             public void onFailure(Call<ProjectsResponse> call, Throwable t) {
+                if (swipeRefreshProjects != null) swipeRefreshProjects.setRefreshing(false);
                 if (!isAdded()) return;
                 Toast.makeText(requireContext(), "Could not reach backend", Toast.LENGTH_SHORT).show();
                 refreshList();

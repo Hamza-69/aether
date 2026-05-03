@@ -52,6 +52,7 @@ dependencies {
     implementation(libs.material)
     implementation(libs.activity)
     implementation(libs.constraintlayout)
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
 
     // Retrofit for connecting Android to backend API
     implementation("com.squareup.retrofit2:retrofit:2.11.0")

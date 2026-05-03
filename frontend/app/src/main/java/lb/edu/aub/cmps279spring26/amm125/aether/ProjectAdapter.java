@@ -382,20 +382,42 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         Button btnCancel = dialog.findViewById(R.id.btnCancelDelete);
 
         btnDelete.setOnClickListener(v -> {
-            for (int i = 0; i < HomeActivity.communityProjects.size(); i++) {
-                if (HomeActivity.communityProjects.get(i).getId() == project.getId()) {
-                    HomeActivity.communityProjects.remove(i);
-                    break;
+            String backendId = project.getBackendId();
+            if (backendId == null || backendId.trim().isEmpty()) {
+                showInfoSnackbar(view, "This project is not linked to backend yet");
+                dialog.dismiss();
+                return;
+            }
+
+            apiService.deleteProject(backendId).enqueue(new Callback<ActionResponse>() {
+                @Override
+                public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
+                    if (!response.isSuccessful()) {
+                        showInfoSnackbar(view, "Delete failed (" + response.code() + ")");
+                        return;
+                    }
+
+                    for (int i = 0; i < HomeActivity.communityProjects.size(); i++) {
+                        if (HomeActivity.communityProjects.get(i).getId() == project.getId()) {
+                            HomeActivity.communityProjects.remove(i);
+                            break;
+                        }
+                    }
+                    projects.remove(position);
+                    notifyItemRemoved(position);
+                    notifyItemRangeChanged(position, projects.size());
+                    if (deleteListener != null) {
+                        deleteListener.onProjectDeleted();
+                    }
+                    showInfoSnackbar(view, "Project deleted permanently");
+                    dialog.dismiss();
                 }
-            }
-            projects.remove(position);
-            notifyItemRemoved(position);
-            notifyItemRangeChanged(position, projects.size());
-            if (deleteListener != null) {
-                deleteListener.onProjectDeleted();
-            }
-            showInfoSnackbar(view, "Project deleted permanently");
-            dialog.dismiss();
+
+                @Override
+                public void onFailure(Call<ActionResponse> call, Throwable t) {
+                    showInfoSnackbar(view, "Could not reach backend");
+                }
+            });
         });
 
         btnCancel.setOnClickListener(v -> dialog.dismiss());

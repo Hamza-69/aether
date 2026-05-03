@@ -2,6 +2,7 @@ package lb.edu.aub.cmps279spring26.amm125.aether;
 
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
@@ -19,6 +20,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.content.res.ColorStateList;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -43,7 +47,6 @@ import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiClient;
 import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiService;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.ActionResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.BackendProject;
-import lb.edu.aub.cmps279spring26.amm125.aether.model.GenerateKeystoreRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.MessagesResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.ProjectMessage;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.ProjectWrapperResponse;
@@ -65,6 +68,7 @@ public class ChatActivity extends AppCompatActivity {
     private static final String STREAM_EXPORT_APK = "export-apk";
     private static final String STREAM_GENERATE_KEYSTORE = "generate-keystore";
     private static final String STREAM_PREVIEW = "preview";
+    private static final String SANDBOX_NOT_FOUND_MSG = "the sandbox was not found";
 
     private RecyclerView rvChat;
     private ChatAdapter adapter;
@@ -73,8 +77,10 @@ public class ChatActivity extends AppCompatActivity {
     private MaterialCardView btnSend;
     private View inputContainer;
     private View previewContainer;
+    private View previewLoadingOverlay;
     private WebView webPreview;
     private TextView tvPreviewHint;
+    private TextView tvPreviewLoading;
     private MaterialButton btnChatToggle, btnViewToggle;
     private String currentPreviewUrl;
     private String projectTitle;
@@ -83,6 +89,8 @@ public class ChatActivity extends AppCompatActivity {
     private String projectId;
     private Project currentProject;
     private int projectIndex = -1;
+    private boolean previewErrorShown = false;
+    private boolean previewRecoveryInProgress = false;
     private final ApiService apiService = ApiClient.getApiService();
     private final Map<String, RealtimeClient> realtimeClients = new HashMap<>();
 
@@ -123,8 +131,10 @@ public class ChatActivity extends AppCompatActivity {
         btnSend = findViewById(R.id.btnSendChat);
         inputContainer = findViewById(R.id.inputContainer);
         previewContainer = findViewById(R.id.previewContainer);
+        previewLoadingOverlay = findViewById(R.id.previewLoadingOverlay);
         webPreview = findViewById(R.id.webPreview);
         tvPreviewHint = findViewById(R.id.tvPreviewHint);
+        tvPreviewLoading = findViewById(R.id.tvPreviewLoading);
         btnChatToggle = findViewById(R.id.btnChatToggle);
         btnViewToggle = findViewById(R.id.btnViewToggle);
 
@@ -133,7 +143,31 @@ public class ChatActivity extends AppCompatActivity {
         btnChatToggle.setRippleColor(ColorStateList.valueOf(Color.TRANSPARENT));
         btnViewToggle.setRippleColor(ColorStateList.valueOf(Color.TRANSPARENT));
 
-        webPreview.setWebViewClient(new WebViewClient());
+        webPreview.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+                super.onReceivedHttpError(view, request, errorResponse);
+                if (request == null || !request.isForMainFrame() || errorResponse == null) return;
+                int statusCode = errorResponse.getStatusCode();
+                if (statusCode >= 500) {
+                    markInvalidPreview("Preview is currently unavailable");
+                }
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request == null || !request.isForMainFrame()) return;
+                markInvalidPreview("Preview failed to load");
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                if ("about:blank".equals(url)) return;
+                probeForSandboxErrorPage();
+            }
+        });
         webPreview.getSettings().setJavaScriptEnabled(true);
         webPreview.getSettings().setDomStorageEnabled(true);
 
@@ -155,7 +189,6 @@ public class ChatActivity extends AppCompatActivity {
 
         if (!TextUtils.isEmpty(projectId)) {
             loadMessages();
-            startRealtimeStreams();
             hydratePreviewUrl();
         } else if (!TextUtils.isEmpty(projectDesc)) {
             messageList.add(new ChatMessage(projectDesc, true));
@@ -172,14 +205,6 @@ public class ChatActivity extends AppCompatActivity {
         realtimeClients.clear();
     }
 
-    private void startRealtimeStreams() {
-        connectRealtimeForType(STREAM_CODE_AGENT);
-        connectRealtimeForType(STREAM_DEPLOY);
-        connectRealtimeForType(STREAM_EXPORT_APK);
-        connectRealtimeForType(STREAM_GENERATE_KEYSTORE);
-        connectRealtimeForType(STREAM_PREVIEW);
-    }
-
     private void connectRealtimeForType(String streamType) {
         if (TextUtils.isEmpty(projectId) || realtimeClients.containsKey(streamType)) {
             return;
@@ -192,14 +217,12 @@ public class ChatActivity extends AppCompatActivity {
 
             @Override
             public void onStatus(String type, String status) {
-                if ("failed".equalsIgnoreCase(status)) {
-                    showInfoSnackbar("Realtime disconnected for " + formatStreamLabel(type));
-                }
+                // Realtime reconnects automatically; avoid noisy snackbars for transient socket drops.
             }
 
             @Override
             public void onError(String type, String errorMessage) {
-                showInfoSnackbar(formatStreamLabel(type) + ": " + errorMessage);
+                // Token/socket errors are retried by RealtimeClient and should not interrupt the project page.
             }
         });
         realtimeClients.put(streamType, client);
@@ -322,41 +345,14 @@ public class ChatActivity extends AppCompatActivity {
         LinearLayout optExport = dialog.findViewById(R.id.optionExport);
         LinearLayout optSecrets = dialog.findViewById(R.id.optionSecrets);
         LinearLayout optDelete = dialog.findViewById(R.id.optionDelete);
+        TextView tvPreviewRestart = dialog.findViewById(R.id.tvUpdateText);
+        TextView tvExport = optExport != null ? (TextView) optExport.getChildAt(1) : null;
+        if (optDeploy != null) optDeploy.setVisibility(View.GONE);
+        if (optKeystore != null) optKeystore.setVisibility(View.GONE);
+        if (optPreview != null) optPreview.setVisibility(View.GONE);
+        if (tvPreviewRestart != null) tvPreviewRestart.setText("Preview");
+        if (tvExport != null) tvExport.setText("Export");
         optUpdateVisible(optPreviewRestart, true);
-
-        optDeploy.setOnClickListener(view -> {
-            dialog.dismiss();
-            if (TextUtils.isEmpty(projectId)) {
-                showInfoSnackbar("This project is not linked to backend yet");
-                return;
-            }
-            connectRealtimeForType(STREAM_DEPLOY);
-            triggerAction("Deploy scheduled", apiService.deployProject(projectId));
-        });
-
-        optKeystore.setOnClickListener(view -> {
-            dialog.dismiss();
-            if (TextUtils.isEmpty(projectId)) {
-                showInfoSnackbar("This project is not linked to backend yet");
-                return;
-            }
-            connectRealtimeForType(STREAM_GENERATE_KEYSTORE);
-            triggerAction(
-                    "Keystore generation triggered",
-                    apiService.generateKeystore(projectId, new GenerateKeystoreRequest(Collections.emptyMap()))
-            );
-        });
-
-        optPreview.setOnClickListener(view -> {
-            dialog.dismiss();
-            if (TextUtils.isEmpty(projectId)) {
-                showInfoSnackbar("This project is not linked to backend yet");
-                return;
-            }
-            connectRealtimeForType(STREAM_PREVIEW);
-            triggerPreviewAction("Preview requested", apiService.runPreview(projectId));
-            showViewMode();
-        });
 
         optPreviewRestart.setOnClickListener(view -> {
             dialog.dismiss();
@@ -365,7 +361,7 @@ public class ChatActivity extends AppCompatActivity {
                 return;
             }
             connectRealtimeForType(STREAM_PREVIEW);
-            triggerPreviewAction("Preview restart requested", apiService.restartPreview(projectId));
+            triggerPreviewAction("Preview requested", apiService.restartPreview(projectId));
             showViewMode();
         });
 
@@ -375,8 +371,10 @@ public class ChatActivity extends AppCompatActivity {
                 showInfoSnackbar("This project is not linked to backend yet");
                 return;
             }
-            connectRealtimeForType(STREAM_EXPORT_APK);
-            triggerAction("APK export requested", apiService.exportApk(projectId));
+            Intent intent = new Intent(this, ExportActivity.class);
+            intent.putExtra("PROJECT_ID", projectId);
+            intent.putExtra("PROJECT_TITLE", projectTitle);
+            startActivity(intent);
         });
 
         if (optSecrets != null) {
@@ -637,12 +635,32 @@ public class ChatActivity extends AppCompatActivity {
         Button btnCancel = dialog.findViewById(R.id.btnCancelDelete);
 
         btnDelete.setOnClickListener(v -> {
-            if (currentProject != null) {
-                HomeActivity.userProjects.remove(currentProject);
+            if (TextUtils.isEmpty(projectId)) {
+                showInfoSnackbar("Project is not linked to backend");
+                dialog.dismiss();
+                return;
             }
-            Toast.makeText(this, "Project deleted", Toast.LENGTH_SHORT).show();
-            dialog.dismiss();
-            finish();
+
+            apiService.deleteProject(projectId).enqueue(new Callback<ActionResponse>() {
+                @Override
+                public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
+                    if (!response.isSuccessful()) {
+                        showInfoSnackbar("Failed to delete project");
+                        return;
+                    }
+                    if (currentProject != null) {
+                        HomeActivity.userProjects.remove(currentProject);
+                    }
+                    Toast.makeText(ChatActivity.this, "Project deleted", Toast.LENGTH_SHORT).show();
+                    dialog.dismiss();
+                    finish();
+                }
+
+                @Override
+                public void onFailure(Call<ActionResponse> call, Throwable t) {
+                    showInfoSnackbar("Could not reach backend");
+                }
+            });
         });
 
         btnCancel.setOnClickListener(v -> dialog.dismiss());
@@ -664,7 +682,11 @@ public class ChatActivity extends AppCompatActivity {
         inputContainer.setVisibility(View.GONE);
         previewContainer.setVisibility(View.VISIBLE);
 
-        if (TextUtils.isEmpty(currentPreviewUrl) && !TextUtils.isEmpty(projectId)) {
+        if (!TextUtils.isEmpty(currentPreviewUrl)) {
+            setPreviewLoading(true, "Loading preview...");
+            webPreview.loadUrl(currentPreviewUrl);
+        } else if (!TextUtils.isEmpty(projectId)) {
+            setPreviewLoading(true, "Checking preview...");
             hydratePreviewUrl();
         }
     }
@@ -701,9 +723,89 @@ public class ChatActivity extends AppCompatActivity {
                 ? rawUrl
                 : "https://" + rawUrl;
         currentPreviewUrl = url;
-        showViewMode();
+        previewErrorShown = false;
         tvPreviewHint.setText(url);
-        webPreview.loadUrl(url);
+        if (previewContainer.getVisibility() == View.VISIBLE) {
+            setPreviewLoading(true, "Loading preview...");
+            webPreview.loadUrl(url);
+        }
+    }
+
+    private void probeForSandboxErrorPage() {
+        if (previewContainer.getVisibility() != View.VISIBLE) return;
+        webPreview.evaluateJavascript(
+                "(function(){var t=(document.title||'')+'\\n'+((document.body&&document.body.innerText)||'');return t.toLowerCase().slice(0,4000);})();",
+                value -> {
+                    if (value == null) return;
+                    String lower = value.toLowerCase();
+                    if (lower.contains(SANDBOX_NOT_FOUND_MSG) || lower.contains("bad gateway")) {
+                        markInvalidPreview("Preview sandbox is no longer available");
+                    } else {
+                        previewRecoveryInProgress = false;
+                        setPreviewLoading(false, null);
+                    }
+                }
+        );
+    }
+
+    private void markInvalidPreview(String message) {
+        if (previewErrorShown) return;
+        previewErrorShown = true;
+        currentPreviewUrl = null;
+        tvPreviewHint.setText(message);
+        setPreviewLoading(true, message);
+        webPreview.stopLoading();
+        webPreview.loadUrl("about:blank");
+        restartPreviewAfterInvalidPage(message);
+    }
+
+    private void restartPreviewAfterInvalidPage(String message) {
+        if (previewRecoveryInProgress || TextUtils.isEmpty(projectId)) {
+            showInfoSnackbar(message);
+            return;
+        }
+
+        previewRecoveryInProgress = true;
+        tvPreviewHint.setText(message + ". Restarting preview...");
+        setPreviewLoading(true, "Restarting preview...");
+        connectRealtimeForType(STREAM_PREVIEW);
+        apiService.restartPreview(projectId).enqueue(new Callback<ActionResponse>() {
+            @Override
+            public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
+                if (!response.isSuccessful()) {
+                    previewRecoveryInProgress = false;
+                    tvPreviewHint.setText("Preview restart failed");
+                    setPreviewLoading(false, null);
+                    showInfoSnackbar("Preview restart failed (" + response.code() + ")");
+                    return;
+                }
+
+                ActionResponse body = response.body();
+                String previewUrl = body != null ? body.getUrl() : null;
+                if (!TextUtils.isEmpty(previewUrl)) {
+                    loadPreviewUrl(previewUrl);
+                } else {
+                    tvPreviewHint.setText("Preview restart requested");
+                    setPreviewLoading(true, "Preview restart requested...");
+                }
+            }
+
+            @Override
+            public void onFailure(Call<ActionResponse> call, Throwable t) {
+                previewRecoveryInProgress = false;
+                tvPreviewHint.setText("Could not restart preview");
+                setPreviewLoading(false, null);
+                showInfoSnackbar("Could not reach backend");
+            }
+        });
+    }
+
+    private void setPreviewLoading(boolean loading, String message) {
+        if (previewLoadingOverlay == null) return;
+        previewLoadingOverlay.setVisibility(loading ? View.VISIBLE : View.GONE);
+        if (loading && tvPreviewLoading != null && !TextUtils.isEmpty(message)) {
+            tvPreviewLoading.setText(message);
+        }
     }
 
     private void hydratePreviewUrl() {
@@ -711,17 +813,22 @@ public class ChatActivity extends AppCompatActivity {
             @Override
             public void onResponse(Call<ProjectWrapperResponse> call, Response<ProjectWrapperResponse> response) {
                 if (!response.isSuccessful() || response.body() == null) {
+                    setPreviewLoading(false, null);
                     return;
                 }
                 BackendProject project = response.body().getProject();
                 String url = project != null ? project.getPreviewUrl() : null;
                 if (!TextUtils.isEmpty(url)) {
                     loadPreviewUrl(url);
+                } else {
+                    tvPreviewHint.setText("Run preview to load your app");
+                    setPreviewLoading(false, null);
                 }
             }
 
             @Override
             public void onFailure(Call<ProjectWrapperResponse> call, Throwable t) {
+                setPreviewLoading(false, null);
                 // Non-fatal: realtime/manual actions can still populate preview later.
             }
         });

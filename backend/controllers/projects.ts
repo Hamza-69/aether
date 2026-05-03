@@ -31,23 +31,6 @@ const toKebabCase = (str: string) =>
     .replace(/-+/g, "-")
     .slice(0, 60)
 
-const RUNNING_MAX_MIN = 20
-const SCHEDULED_STUCK_MIN = 5
-const SANDBOX_NOT_FOUND_MSG = "The sandbox was not found"
-
-const isSandboxUrlAlive = async (url: string) => {
-  try {
-    const response = await fetch(url, { method: "GET", redirect: "follow" })
-    if (response.status === 502) {
-      const body = await response.text().catch(() => "")
-      if (body.includes(SANDBOX_NOT_FOUND_MSG)) return false
-    }
-    return response.status < 500
-  } catch {
-    return false
-  }
-}
-
 const startPreviewJob = async (project: { id: string, previewSandboxId: string | null }) => {
   if (project.previewSandboxId) {
     try {
@@ -148,6 +131,56 @@ projectsRouter.patch("/:projectId", async (req, res) => {
   }
 })
 
+// DELETE /api/projects/:projectId — delete a project
+projectsRouter.delete("/:projectId", async (req, res) => {
+  const { projectId } = req.params as { projectId: string }
+
+  const project = await ensureProjectOwnership(projectId, req.user!.id)
+  if (!project) {
+    res.status(404).json({ error: "Project not found" })
+    return
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Defensive cleanup so delete works even if older DB constraints are missing cascades.
+      const streams = await tx.stream.findMany({
+        where: {
+          OR: [
+            { message: { projectId } },
+            { deployment: { projectId } },
+            { apk: { projectId } },
+            { preview: { projectId } },
+            { keystore: { projectId } },
+          ],
+        },
+        select: { id: true },
+      })
+      const streamIds = streams.map((s) => s.id)
+      if (streamIds.length > 0) {
+        await tx.streamChunk.deleteMany({ where: { streamId: { in: streamIds } } })
+        await tx.stream.deleteMany({ where: { id: { in: streamIds } } })
+      }
+
+      await tx.publishedProject.deleteMany({ where: { projectId } })
+      await tx.message.deleteMany({ where: { projectId } })
+      await tx.secret.deleteMany({ where: { projectId } })
+      await tx.deployment.deleteMany({ where: { projectId } })
+      await tx.aPK.deleteMany({ where: { projectId } })
+      await tx.preview.deleteMany({ where: { projectId } })
+      await tx.keyStore.deleteMany({ where: { projectId } })
+
+      await tx.project.delete({
+        where: { id: projectId },
+      })
+    })
+    res.status(200).json({ success: true })
+  } catch (error) {
+    console.error("[projectsRouter.DELETE /:projectId] Failed:", error)
+    res.status(500).json({ error: "Failed to delete project" })
+  }
+})
+
 // POST /api/projects — create a project owned by the authenticated user
 projectsRouter.post("/", async (req, res) => {
   console.log(`[projectsRouter.POST] Received request to create project`)
@@ -199,70 +232,6 @@ projectsRouter.post("/", async (req, res) => {
   }
 })
 
-// POST /api/projects/:projectId/preview — start or reuse sandbox preview
-projectsRouter.post("/:projectId/preview", async (req, res) => {
-  const { projectId } = req.params as { projectId: string }
-
-  const project = await ensureProjectOwnership(projectId, req.user!.id)
-  if (!project) {
-    res.status(404).json({ error: "Project not found" })
-    return
-  }
-
-  const hasRunnableFragment = await prisma.message.findFirst({
-    where: {
-      projectId,
-      role: "ASSISTANT",
-      fragment: {
-        frontendTarKey: { not: null },
-        backendTarKey: { not: null },
-      },
-    },
-    select: { id: true },
-  })
-
-  if (!hasRunnableFragment) {
-    res.status(404).json({ error: "No runnable fragment found for project" })
-    return
-  }
-
-  try {
-    const now = Date.now()
-    const startedAt = project.previewStartedAt?.getTime() ?? 0
-    const elapsedMin = (now - startedAt) / 60_000
-
-    const latestPreview = await prisma.preview.findFirst({
-      where: { projectId, url: { not: null } },
-      orderBy: { createdAt: "desc" },
-      select: { url: true },
-    })
-    const latestUrl = latestPreview?.url ?? null
-
-    if (project.previewStatus === "RUNNING" && latestUrl && elapsedMin <= RUNNING_MAX_MIN) {
-      const alive = await isSandboxUrlAlive(latestUrl)
-      if (alive) {
-        res.status(200).json({ url: latestUrl, alreadyRunning: true })
-        return
-      }
-    }
-
-    if (
-      project.previewStatus === "SCHEDULED" &&
-      latestUrl &&
-      elapsedMin <= SCHEDULED_STUCK_MIN
-    ) {
-      res.status(200).json({ url: latestUrl, scheduled: true })
-      return
-    }
-
-    const url = await startPreviewJob(project)
-    res.status(202).json({ url, scheduled: true })
-  } catch (error) {
-    console.error("[projectsRouter.POST /:projectId/preview] Failed:", error)
-    res.status(500).json({ error: "Failed to run preview" })
-  }
-})
-
 // POST /api/projects/:projectId/preview/restart — force restart sandbox preview
 projectsRouter.post("/:projectId/preview/restart", async (req, res) => {
   const { projectId } = req.params as { projectId: string }
@@ -293,7 +262,7 @@ projectsRouter.post("/:projectId/preview/restart", async (req, res) => {
   // Rate limit: 1 per minute per project
   if (project.previewStartedAt) {
     const elapsedMs = Date.now() - project.previewStartedAt.getTime()
-    if (elapsedMs < 60_000) {
+    if (elapsedMs < 120_000) {
       res.status(429).json({ error: "Rate limit exceeded: please wait a minute before restarting the preview again." })
       return
     }

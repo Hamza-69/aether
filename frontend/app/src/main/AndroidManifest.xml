@@ -17,6 +17,10 @@
         android:usesCleartextTraffic="true">
 
         <activity
+            android:name=".ExportActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+        <activity
             android:name=".PreviewActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

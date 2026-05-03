@@ -17,6 +17,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.google.android.material.card.MaterialCardView;
 
@@ -49,6 +50,7 @@ public class DiscoverFragment extends Fragment {
     private View searchBarContainer;
     private EditText etSearch;
     private String currentFilterType = "All";
+    private SwipeRefreshLayout swipeRefreshDiscover;
 
     @Nullable
     @Override
@@ -56,6 +58,7 @@ public class DiscoverFragment extends Fragment {
         View view = inflater.inflate(R.layout.fragment_discover, container, false);
 
         rvDiscover = view.findViewById(R.id.rvDiscover);
+        swipeRefreshDiscover = view.findViewById(R.id.swipeRefreshDiscover);
         tvCount = view.findViewById(R.id.tvDiscoverCount);
         cardEmptyDiscover = view.findViewById(R.id.cardEmptyDiscover);
         tvEmptyDiscoverTitle = view.findViewById(R.id.tvEmptyDiscoverTitle);
@@ -81,6 +84,9 @@ public class DiscoverFragment extends Fragment {
 
         setupFilters();
         loadDiscoverProjects();
+        if (swipeRefreshDiscover != null) {
+            swipeRefreshDiscover.setOnRefreshListener(this::loadDiscoverProjects);
+        }
         if (btnEmptyDiscoverAction != null) {
             btnEmptyDiscoverAction.setOnClickListener(v -> loadDiscoverProjects());
         }
@@ -111,9 +117,13 @@ public class DiscoverFragment extends Fragment {
     }
 
     private void loadDiscoverProjects() {
+        if (swipeRefreshDiscover != null && !swipeRefreshDiscover.isRefreshing()) {
+            swipeRefreshDiscover.setRefreshing(true);
+        }
         apiService.getDiscoverProjects().enqueue(new Callback<DiscoverResponse>() {
             @Override
             public void onResponse(Call<DiscoverResponse> call, Response<DiscoverResponse> response) {
+                if (swipeRefreshDiscover != null) swipeRefreshDiscover.setRefreshing(false);
                 if (!isAdded()) return;
                 if (!response.isSuccessful() || response.body() == null || response.body().getPublishedProjects() == null) {
                     Toast.makeText(requireContext(), "Failed to load discover projects", Toast.LENGTH_SHORT).show();
@@ -138,6 +148,7 @@ public class DiscoverFragment extends Fragment {
 
             @Override
             public void onFailure(Call<DiscoverResponse> call, Throwable t) {
+                if (swipeRefreshDiscover != null) swipeRefreshDiscover.setRefreshing(false);
                 if (!isAdded()) return;
                 Toast.makeText(requireContext(), "Could not reach backend", Toast.LENGTH_SHORT).show();
                 applyFilters();
