@@ -2,6 +2,7 @@ package lb.edu.aub.cmps279spring26.amm125.aether.realtime;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -12,7 +13,6 @@ import java.util.List;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
-import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiClient;
 import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiService;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.RealtimeTokenRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.RealtimeTokenResponse;
@@ -25,13 +25,15 @@ import retrofit2.Call;
 import retrofit2.Callback;
 
 public class RealtimeClient {
+    private static final String TAG = "RealtimeClient";
+
     public interface Listener {
         void onData(String streamType, JSONObject payload);
         void onStatus(String streamType, String status);
         void onError(String streamType, String errorMessage);
     }
 
-    private static final String INNGEST_WS_URL = "wss://api.inngest.com/v1/realtime/connect?token=";
+    private static final String INNGEST_WS_URL = "ws://10.0.2.2:8288/v1/realtime/connect?token=";
 
     private final ApiService apiService;
     private final OkHttpClient okHttpClient;
@@ -46,7 +48,7 @@ public class RealtimeClient {
 
     public RealtimeClient(ApiService apiService, Listener listener) {
         this.apiService = apiService;
-        this.okHttpClient = ApiClient.getOkHttpClient();
+        this.okHttpClient = new OkHttpClient.Builder().build();
         this.listener = listener;
     }
 
@@ -95,12 +97,14 @@ public class RealtimeClient {
 
                         String token = body.getToken();
                         String url = INNGEST_WS_URL + URLEncoder.encode(token, StandardCharsets.UTF_8);
+                        Log.d(TAG, "Connecting realtime stream " + streamType + " to " + INNGEST_WS_URL + "<token>");
                         Request request = new Request.Builder().url(url).build();
                         webSocket = okHttpClient.newWebSocket(request, new InngestWebSocketListener());
                     }
 
                     @Override
                     public void onFailure(Call<RealtimeTokenResponse> call, Throwable t) {
+                        Log.w(TAG, "Realtime token request failed for " + streamType, t);
                         notifyError("Realtime token request failed");
                         scheduleReconnect();
                     }
@@ -130,6 +134,7 @@ public class RealtimeClient {
         @Override
         public void onOpen(WebSocket webSocket, Response response) {
             reconnectDelayMs = 1000;
+            Log.d(TAG, "Realtime websocket opened for " + streamType);
             notifyStatus("connected");
         }
 
@@ -138,32 +143,39 @@ public class RealtimeClient {
             try {
                 JSONObject root = new JSONObject(text);
                 String kind = root.optString("kind", "");
-                if (!"data".equalsIgnoreCase(kind)) return;
+                if ("datastream-start".equalsIgnoreCase(kind) || "datastream-end".equalsIgnoreCase(kind)) {
+                    return;
+                }
 
                 JSONObject payload;
-                Object data = root.opt("data");
+                Object data = root.has("data") ? root.opt("data") : root.opt("payload");
                 if (data instanceof JSONObject) {
                     payload = (JSONObject) data;
                 } else if (data instanceof String) {
                     payload = new JSONObject();
                     payload.put("message", data);
+                } else if ("chunk".equalsIgnoreCase(kind) && root.has("chunk")) {
+                    payload = new JSONObject();
+                    payload.put("message", root.optString("chunk", ""));
                 } else {
                     payload = new JSONObject();
                 }
                 notifyData(payload);
-            } catch (JSONException ignored) {
-                // Non-JSON frames are ignored.
+            } catch (JSONException e) {
+                Log.w(TAG, "Ignoring malformed realtime frame for " + streamType + ": " + text, e);
             }
         }
 
         @Override
         public void onClosed(WebSocket webSocket, int code, String reason) {
+            Log.d(TAG, "Realtime websocket closed for " + streamType + " code=" + code + " reason=" + reason);
             notifyStatus("closed");
             scheduleReconnect();
         }
 
         @Override
         public void onFailure(WebSocket webSocket, Throwable t, Response response) {
+            Log.w(TAG, "Realtime websocket failed for " + streamType, t);
             notifyStatus("failed");
             scheduleReconnect();
         }

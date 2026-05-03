@@ -4,13 +4,25 @@ import com.google.gson.JsonElement;
 import java.util.List;
 
 public class RealtimeTokenResponse {
-    private String token;
+    private JsonElement token;
+    private String key;
     private String channel;
     private String topic;
     private List<JsonElement> streamChunks;
 
     public String getToken() {
-        return token;
+        if (token != null) {
+            if (token.isJsonPrimitive()) {
+                return token.getAsString();
+            }
+            if (token.isJsonObject() && token.getAsJsonObject().has("key")) {
+                JsonElement tokenKey = token.getAsJsonObject().get("key");
+                if (tokenKey != null && tokenKey.isJsonPrimitive()) {
+                    return tokenKey.getAsString();
+                }
+            }
+        }
+        return key;
     }
 
     public String getChannel() {

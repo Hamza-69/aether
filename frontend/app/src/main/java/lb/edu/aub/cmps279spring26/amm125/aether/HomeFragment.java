@@ -163,7 +163,7 @@ public class HomeFragment extends Fragment {
     }
 
     private Project mapBackendProject(BackendProject backendProject) {
-        String status = "RUNNING".equalsIgnoreCase(backendProject.getPreviewStatus()) ? "Published" : "Not Published";
+        String status = backendProject.isPublished() ? "Published" : "Not Published";
         Project project = new Project(
                 backendProject.getName(),
                 "Project from backend",

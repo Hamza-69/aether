@@ -68,8 +68,16 @@ projectsRouter.get("/", async (req, res) => {
     const projects = await prisma.project.findMany({
       where: { userId: req.user!.id },
       orderBy: { updatedAt: "desc" },
+      include: {
+        publishedProject: { select: { id: true } },
+      },
     })
-    res.status(200).json({ projects })
+    res.status(200).json({
+      projects: projects.map(({ publishedProject, ...project }) => ({
+        ...project,
+        isPublished: Boolean(publishedProject),
+      })),
+    })
   } catch (error) {
     console.error("[projectsRouter.GET] Failed to list projects:", error)
     res.status(500).json({ error: "Failed to list projects" })
@@ -86,6 +94,10 @@ projectsRouter.get("/:projectId", async (req, res) => {
       res.status(404).json({ error: "Project not found" })
       return
     }
+    const publishedProject = await prisma.publishedProject.findUnique({
+      where: { projectId },
+      select: { id: true },
+    })
     const latestPreview = await prisma.preview.findFirst({
       where: { projectId, url: { not: null } },
       orderBy: { createdAt: "desc" },
@@ -95,6 +107,7 @@ projectsRouter.get("/:projectId", async (req, res) => {
       project: {
         ...project,
         previewUrl: latestPreview?.url ?? null,
+        isPublished: Boolean(publishedProject),
       },
     })
   } catch (error) {

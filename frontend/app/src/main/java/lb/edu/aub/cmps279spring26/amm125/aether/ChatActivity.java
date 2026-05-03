@@ -300,6 +300,8 @@ public class ChatActivity extends AppCompatActivity {
         Object rawMessage = payload.opt("message");
         if (rawMessage instanceof JSONObject) {
             applyAgentMessageObject((JSONObject) rawMessage);
+        } else if (payload.has("id") && payload.has("role") && payload.has("content")) {
+            applyAgentMessageObject(payload);
         } else {
             String progress = payload.optString("message", "");
             appendAgentThinkingChunk(progress);

@@ -6,6 +6,7 @@ public class BackendProject {
     private String screenshotUrl;
     private String previewStatus;
     private String previewUrl;
+    private boolean isPublished;
     private String createdAt;
     private String updatedAt;
 
@@ -23,6 +24,9 @@ public class BackendProject {
 
     public String getPreviewUrl() { return previewUrl; }
     public void setPreviewUrl(String previewUrl) { this.previewUrl = previewUrl; }
+
+    public boolean isPublished() { return isPublished; }
+    public void setPublished(boolean published) { isPublished = published; }
 
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
