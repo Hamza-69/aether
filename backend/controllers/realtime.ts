@@ -2,6 +2,7 @@ import { inngest } from "../ai/inngest/client"
 import { getSubscriptionToken } from "@inngest/realtime"
 import express, { Router } from "express"
 import { ensureProjectOwnership } from "../lib/ensureProjectOwnership"
+import { prisma } from "../lib/prisma"
 
 export const realtimeRouter: Router = express.Router()
 
@@ -16,6 +17,25 @@ const STREAM_TYPES = {
 } as const
 
 type StreamType = keyof typeof STREAM_TYPES
+
+const getPreviewStreamChunks = async (projectId: string) => {
+  const preview = await prisma.preview.findFirst({
+    where: { projectId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      stream: {
+        include: {
+          streamChunks: {
+            orderBy: { createdAt: "asc" },
+            select: { data: true },
+          },
+        },
+      },
+    },
+  })
+
+  return preview?.stream?.streamChunks.map((chunk) => chunk.data) ?? []
+}
 
 realtimeRouter.post("/", async (req, res): Promise<void> => {
   const { projectId, type } = req.body as { projectId?: string; type?: StreamType }
@@ -46,5 +66,7 @@ realtimeRouter.post("/", async (req, res): Promise<void> => {
     topics: [config.topic],
   }) as any
 
-  res.status(200).json({ token, channel, topic: config.topic })
+  const streamChunks = type === "preview" ? await getPreviewStreamChunks(projectId) : []
+
+  res.status(200).json({ token, channel, topic: config.topic, streamChunks })
 })

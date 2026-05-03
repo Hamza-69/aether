@@ -6,6 +6,9 @@ import android.os.Looper;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import com.google.gson.JsonElement;
+
+import java.util.List;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
@@ -77,7 +80,20 @@ public class RealtimeClient {
                             return;
                         }
 
-                        String token = response.body().getToken();
+                        RealtimeTokenResponse body = response.body();
+                        List<JsonElement> streamChunks = body.getStreamChunks();
+                        if (streamChunks != null) {
+                            for (JsonElement chunk : streamChunks) {
+                                if (chunk == null || chunk.isJsonNull()) continue;
+                                try {
+                                    notifyData(new JSONObject(chunk.toString()));
+                                } catch (JSONException ignored) {
+                                    // Ignore malformed historical chunks.
+                                }
+                            }
+                        }
+
+                        String token = body.getToken();
                         String url = INNGEST_WS_URL + URLEncoder.encode(token, StandardCharsets.UTF_8);
                         Request request = new Request.Builder().url(url).build();
                         webSocket = okHttpClient.newWebSocket(request, new InngestWebSocketListener());

@@ -71,6 +71,8 @@ public class ChatActivity extends AppCompatActivity {
     private static final String STREAM_GENERATE_KEYSTORE = "generate-keystore";
     private static final String STREAM_PREVIEW = "preview";
     private static final String SANDBOX_NOT_FOUND_MSG = "the sandbox was not found";
+    private static final String CLOSED_PORT_MSG = "closed port error";
+    private static final String CONNECTION_REFUSED_MSG = "connection refused on port";
 
     private RecyclerView rvChat;
     private ChatAdapter adapter;
@@ -93,6 +95,7 @@ public class ChatActivity extends AppCompatActivity {
     private int projectIndex = -1;
     private boolean previewErrorShown = false;
     private boolean previewRecoveryInProgress = false;
+    private boolean previewStarting = false;
     private String activeAgentMessageId;
     private final ApiService apiService = ApiClient.getApiService();
     private final Map<String, RealtimeClient> realtimeClients = new HashMap<>();
@@ -153,6 +156,11 @@ public class ChatActivity extends AppCompatActivity {
                 if (request == null || !request.isForMainFrame() || errorResponse == null) return;
                 int statusCode = errorResponse.getStatusCode();
                 if (statusCode >= 500) {
+                    if (previewStarting || previewRecoveryInProgress) {
+                        tvPreviewHint.setText("Preview is starting...");
+                        setPreviewLoading(true, "Preview is starting...");
+                        return;
+                    }
                     markInvalidPreview("Preview is currently unavailable");
                 }
             }
@@ -161,6 +169,11 @@ public class ChatActivity extends AppCompatActivity {
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 super.onReceivedError(view, request, error);
                 if (request == null || !request.isForMainFrame()) return;
+                if (previewStarting || previewRecoveryInProgress) {
+                    tvPreviewHint.setText("Waiting for preview...");
+                    setPreviewLoading(true, "Waiting for preview...");
+                    return;
+                }
                 markInvalidPreview("Preview failed to load");
             }
 
@@ -252,17 +265,25 @@ public class ChatActivity extends AppCompatActivity {
         if (STREAM_PREVIEW.equals(streamType)) {
             String topLevelUrl = payload.optString("url", "");
             if (!TextUtils.isEmpty(topLevelUrl)) {
-                loadPreviewUrl(topLevelUrl);
+                previewStarting = payload.optBoolean("starting", true);
+                loadPreviewUrl(topLevelUrl, true);
             }
 
             JSONObject preview = payload.optJSONObject("preview");
             if (preview != null) {
                 String previewUrl = preview.optString("url", "");
                 if (!TextUtils.isEmpty(previewUrl)) {
-                    showSuccessSnackbar("Preview ready\n" + previewUrl);
-                    loadPreviewUrl(previewUrl);
-                    projectStatus = "Published";
-                    updateStatusUI();
+                    boolean completed = preview.optBoolean("completed", false);
+                    previewStarting = !completed;
+                    if (completed) {
+                        showSuccessSnackbar("Preview ready\n" + previewUrl);
+                    }
+                    loadPreviewUrl(previewUrl, !completed);
+                    if (completed) {
+                        previewRecoveryInProgress = false;
+                        projectStatus = "Published";
+                        updateStatusUI();
+                    }
                 }
             }
         }
@@ -527,6 +548,7 @@ public class ChatActivity extends AppCompatActivity {
                 return;
             }
             connectRealtimeForType(STREAM_PREVIEW);
+            previewStarting = true;
             triggerPreviewAction("Preview requested", apiService.restartPreview(projectId));
             showViewMode();
         });
@@ -729,7 +751,7 @@ public class ChatActivity extends AppCompatActivity {
                 ActionResponse body = response.body();
                 String previewUrl = body != null ? body.getUrl() : null;
                 if (!TextUtils.isEmpty(previewUrl)) {
-                    loadPreviewUrl(previewUrl);
+                    loadPreviewUrl(previewUrl, true);
                     showSuccessSnackbar(successMessage + "\n" + previewUrl);
                 } else {
                     showSuccessSnackbar(successMessage);
@@ -848,6 +870,10 @@ public class ChatActivity extends AppCompatActivity {
         inputContainer.setVisibility(View.GONE);
         previewContainer.setVisibility(View.VISIBLE);
 
+        if (!TextUtils.isEmpty(projectId)) {
+            connectRealtimeForType(STREAM_PREVIEW);
+        }
+
         if (!TextUtils.isEmpty(currentPreviewUrl)) {
             setPreviewLoading(true, "Loading preview...");
             webPreview.loadUrl(currentPreviewUrl);
@@ -884,15 +910,20 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void loadPreviewUrl(String rawUrl) {
+        loadPreviewUrl(rawUrl, false);
+    }
+
+    private void loadPreviewUrl(String rawUrl, boolean starting) {
         if (TextUtils.isEmpty(rawUrl)) return;
         String url = rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
                 ? rawUrl
                 : "https://" + rawUrl;
         currentPreviewUrl = url;
+        previewStarting = starting;
         previewErrorShown = false;
         tvPreviewHint.setText(url);
         if (previewContainer.getVisibility() == View.VISIBLE) {
-            setPreviewLoading(true, "Loading preview...");
+            setPreviewLoading(true, starting ? "Preview is starting..." : "Loading preview...");
             webPreview.loadUrl(url);
         }
     }
@@ -904,9 +935,20 @@ public class ChatActivity extends AppCompatActivity {
                 value -> {
                     if (value == null) return;
                     String lower = value.toLowerCase();
-                    if (lower.contains(SANDBOX_NOT_FOUND_MSG) || lower.contains("bad gateway")) {
-                        markInvalidPreview("Preview sandbox is no longer available");
+                    boolean closedPort = lower.contains(CLOSED_PORT_MSG) || lower.contains(CONNECTION_REFUSED_MSG);
+                    if (lower.contains(SANDBOX_NOT_FOUND_MSG) || lower.contains("bad gateway") || closedPort) {
+                        if (previewStarting || previewRecoveryInProgress) {
+                            tvPreviewHint.setText("Preview is starting...");
+                            setPreviewLoading(true, "Preview is starting...");
+                            return;
+                        }
+                        markInvalidPreview(lower.contains(SANDBOX_NOT_FOUND_MSG)
+                                ? "Preview sandbox is no longer available"
+                                : closedPort
+                                ? "Preview server is not listening yet"
+                                : "Preview is currently unavailable");
                     } else {
+                        previewStarting = false;
                         previewRecoveryInProgress = false;
                         setPreviewLoading(false, null);
                     }
@@ -917,6 +959,7 @@ public class ChatActivity extends AppCompatActivity {
     private void markInvalidPreview(String message) {
         if (previewErrorShown) return;
         previewErrorShown = true;
+        previewStarting = false;
         currentPreviewUrl = null;
         tvPreviewHint.setText(message);
         setPreviewLoading(true, message);
@@ -932,6 +975,7 @@ public class ChatActivity extends AppCompatActivity {
         }
 
         previewRecoveryInProgress = true;
+        previewStarting = true;
         tvPreviewHint.setText(message + ". Restarting preview...");
         setPreviewLoading(true, "Restarting preview...");
         connectRealtimeForType(STREAM_PREVIEW);
@@ -949,7 +993,7 @@ public class ChatActivity extends AppCompatActivity {
                 ActionResponse body = response.body();
                 String previewUrl = body != null ? body.getUrl() : null;
                 if (!TextUtils.isEmpty(previewUrl)) {
-                    loadPreviewUrl(previewUrl);
+                    loadPreviewUrl(previewUrl, true);
                 } else {
                     tvPreviewHint.setText("Preview restart requested");
                     setPreviewLoading(true, "Preview restart requested...");
@@ -985,7 +1029,8 @@ public class ChatActivity extends AppCompatActivity {
                 BackendProject project = response.body().getProject();
                 String url = project != null ? project.getPreviewUrl() : null;
                 if (!TextUtils.isEmpty(url)) {
-                    loadPreviewUrl(url);
+                    boolean starting = project != null && "SCHEDULED".equalsIgnoreCase(project.getPreviewStatus());
+                    loadPreviewUrl(url, starting);
                 } else {
                     tvPreviewHint.setText("Run preview to load your app");
                     setPreviewLoading(false, null);

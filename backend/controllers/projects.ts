@@ -56,7 +56,7 @@ const startPreviewJob = async (project: { id: string, previewSandboxId: string |
 
   await inngest.send({
     name: "preview-project/run",
-    data: { projectId: project.id, sandboxId: sandbox.sandboxId },
+    data: { projectId: project.id, sandboxId: sandbox.sandboxId, frontendUrl: url },
   })
 
   return url
@@ -262,8 +262,13 @@ projectsRouter.post("/:projectId/preview/restart", async (req, res) => {
   // Rate limit: 1 per minute per project
   if (project.previewStartedAt) {
     const elapsedMs = Date.now() - project.previewStartedAt.getTime()
-    if (elapsedMs < 120_000) {
-      res.status(429).json({ error: "Rate limit exceeded: please wait a minute before restarting the preview again." })
+    if (elapsedMs < 120_000 && project.previewSandboxId) {
+      const url = `https://8081-${project.previewSandboxId}.e2b.app`
+      res.status(202).json({
+        url,
+        scheduled: project.previewStatus === "SCHEDULED",
+        alreadyRunning: project.previewStatus === "RUNNING",
+      })
       return
     }
   }

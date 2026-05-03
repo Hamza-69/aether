@@ -1,7 +1,7 @@
 import { inngest } from "../client"
 import { prisma } from "../../../lib/prisma"
 import { getSandbox, publish as publishFunction } from "../../../lib/utils"
-import { getStateDownloadUrl, uploadScreenshot } from "../../../lib/storage"
+import { getStateDownloadUrl } from "../../../lib/storage"
 import { captureProjectScreenshot } from "../../../lib/screenshot"
 import { resolveBackendSecretsFromExample, stringifyEnv } from "../../../lib/projectSecrets"
 
@@ -9,7 +9,11 @@ export const previewProjectFunction = inngest.createFunction(
   { id: "preview-project" },
   { event: "preview-project/run" },
   async ({ event, step, publish }: { event: any, step: any, publish: Function }) => {
-    const { projectId, sandboxId } = event.data as { projectId: string; sandboxId: string }
+    const { projectId, sandboxId, frontendUrl: eventFrontendUrl } = event.data as {
+      projectId: string
+      sandboxId: string
+      frontendUrl?: string
+    }
 
     // Resolve the project owner so channels are scoped per user
     const projectOwner = await step.run("resolve-project-owner", async () => {
@@ -21,11 +25,14 @@ export const previewProjectFunction = inngest.createFunction(
     const channel = "project_preview:" + projectOwner.userId + ":" + projectId
 
     const { previewId, streamId } = await step.run("create-incomplete-preview", async () => {
+      const sandbox = await getSandbox(sandboxId)
+      const frontendUrl = eventFrontendUrl ?? `https://${sandbox.getHost(8081)}`
+
       // Previews are an array per project; the most recent one is the "live"
       // preview. Frontend looks up the latest Preview by projectId, then
       // follows preview.stream to subscribe to this run.
       const preview = await prisma.preview.create({
-        data: { projectId, completed: false },
+        data: { projectId, url: frontendUrl, completed: false },
       })
 
       const stream = await prisma.stream.create({
@@ -41,7 +48,7 @@ export const previewProjectFunction = inngest.createFunction(
         publish,
         channel,
         "preview",
-        initialPreview as any,
+        { preview: initialPreview as any, url: frontendUrl, starting: true },
         stream.id,
       )
 
