@@ -18,9 +18,13 @@ const STREAM_TYPES = {
 
 type StreamType = keyof typeof STREAM_TYPES
 
-const getPreviewStreamChunks = async (projectId: string) => {
+const getPreviewStreamChunks = async (projectId: string, previewStartedAt: Date | null) => {
+  const whereClause = previewStartedAt
+    ? { projectId, createdAt: { gte: previewStartedAt } }
+    : { projectId }
+
   const preview = await prisma.preview.findFirst({
-    where: { projectId },
+    where: whereClause,
     orderBy: { createdAt: "desc" },
     include: {
       stream: {
@@ -66,7 +70,9 @@ realtimeRouter.post("/", async (req, res): Promise<void> => {
     topics: [config.topic],
   }) as any
 
-  const streamChunks = type === "preview" ? await getPreviewStreamChunks(projectId) : []
+  const streamChunks = type === "preview"
+    ? await getPreviewStreamChunks(projectId, project.previewStartedAt)
+    : []
 
   res.status(200).json({ token, channel, topic: config.topic, streamChunks })
 })

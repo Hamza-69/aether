@@ -135,6 +135,7 @@ public class ChatActivity extends AppCompatActivity {
     private final StringBuilder previewStatusSteps = new StringBuilder();
     private final Set<String> previewStatusSeenLines = new HashSet<>();
     private long activePreviewRequestStartedAtMs = 0L;
+    private boolean requirePreviewFreshness = true;
     private String activeAgentMessageId;
     private final ApiService apiService = ApiClient.getApiService();
     private final Map<String, RealtimeClient> realtimeClients = new HashMap<>();
@@ -342,11 +343,27 @@ public class ChatActivity extends AppCompatActivity {
                 if (!TextUtils.isEmpty(previewUrl)) {
                     boolean completed = preview.optBoolean("completed", false);
                     boolean running = "RUNNING".equalsIgnoreCase(previewStatus);
+                    boolean doneEvent = payload.optBoolean("done", false);
+                    boolean markRunningEvent = doneEvent && completed;
                     previewCompleted = completed;
                     previewRunning = running;
                     previewStarting = !(completed || running);
                     setCurrentPreviewUrl(previewUrl);
-                    if (completed || running) {
+                    if (markRunningEvent || running) {
+                        // On mark-running, transition to web preview surface in loading state,
+                        // but keep health-gating + backoff before rendering the actual URL.
+                        previewStatusMode = false;
+                        requirePreviewFreshness = false;
+                        previewStarting = true;
+                        if (previewContainer.getVisibility() != View.VISIBLE) {
+                            showViewMode();
+                        } else {
+                            setPreviewStatusModeUI(false);
+                            setPreviewLoading(true, "Checking preview runtime...");
+                            webPreview.stopLoading();
+                            webPreview.loadUrl("about:blank");
+                            renderedPreviewUrl = null;
+                        }
                         confirmPreviewReady(previewUrl);
                     }
                     if (completed) {
@@ -916,6 +933,7 @@ public class ChatActivity extends AppCompatActivity {
                 if (!TextUtils.isEmpty(previewUrl)) {
                     setCurrentPreviewUrl(previewUrl);
                     if (alreadyRunning) {
+                        requirePreviewFreshness = false;
                         checkPreviewHealth(null, previewUrl, runningNow -> {
                             if (runningNow) {
                                 showPreviewStatusReady(previewUrl);
@@ -1057,6 +1075,16 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
+        if (previewStarting && !TextUtils.isEmpty(currentPreviewUrl)) {
+            setPreviewStatusModeUI(false);
+            setPreviewLoading(true, "Checking preview runtime...");
+            webPreview.stopLoading();
+            webPreview.loadUrl("about:blank");
+            renderedPreviewUrl = null;
+            confirmPreviewReady(currentPreviewUrl);
+            return;
+        }
+
         if (TextUtils.isEmpty(projectId)) {
             if (!TextUtils.isEmpty(currentPreviewUrl)) {
                 setPreviewStatusModeUI(false);
@@ -1139,6 +1167,7 @@ public class ChatActivity extends AppCompatActivity {
         cancelPendingPreviewRefetch();
         previewValidationInFlight = false;
         activePreviewRequestStartedAtMs = System.currentTimeMillis();
+        requirePreviewFreshness = true;
         previewStatusMode = true;
         previewStarting = true;
         previewMarkedRunning = false;
@@ -1182,9 +1211,14 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void showPreviewStatusReady(String rawUrl) {
+        if (previewContainer != null && previewContainer.getVisibility() != View.VISIBLE) {
+            // Keep users on the preview surface once the stream reaches ready/running.
+            showViewMode();
+        }
         cancelPendingPreviewRefetch();
         previewValidationInFlight = false;
         activePreviewRequestStartedAtMs = 0L;
+        requirePreviewFreshness = true;
         previewStatusMode = false;
         previewStarting = false;
         previewRecoveryInProgress = false;
@@ -1295,6 +1329,9 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private boolean isProjectPreviewFreshForCurrentRequest(BackendProject project) {
+        if (!requirePreviewFreshness) {
+            return true;
+        }
         if (activePreviewRequestStartedAtMs <= 0L || project == null) {
             return true;
         }

@@ -45,6 +45,7 @@ public class RealtimeClient {
     private WebSocket webSocket;
     private boolean reconnectEnabled = false;
     private int reconnectDelayMs = 1000;
+    private int connectionGeneration = 0;
 
     public RealtimeClient(ApiService apiService, Listener listener) {
         this.apiService = apiService;
@@ -57,11 +58,13 @@ public class RealtimeClient {
         this.streamType = streamType;
         this.reconnectEnabled = true;
         this.reconnectDelayMs = 1000;
-        fetchTokenAndConnect();
+        this.connectionGeneration += 1;
+        fetchTokenAndConnect(connectionGeneration);
     }
 
     public void disconnect() {
         reconnectEnabled = false;
+        connectionGeneration += 1;
         mainHandler.removeCallbacksAndMessages(null);
         if (webSocket != null) {
             webSocket.close(1000, "client disconnect");
@@ -69,16 +72,19 @@ public class RealtimeClient {
         }
     }
 
-    private void fetchTokenAndConnect() {
+    private void fetchTokenAndConnect(final int generation) {
         if (projectId == null || streamType == null) return;
 
         apiService.createRealtimeToken(new RealtimeTokenRequest(projectId, streamType))
                 .enqueue(new Callback<RealtimeTokenResponse>() {
                     @Override
                     public void onResponse(Call<RealtimeTokenResponse> call, retrofit2.Response<RealtimeTokenResponse> response) {
+                        if (!isActiveConnection(generation)) {
+                            return;
+                        }
                         if (!response.isSuccessful() || response.body() == null || response.body().getToken() == null) {
                             notifyError("Failed to get realtime token");
-                            scheduleReconnect();
+                            scheduleReconnect(generation);
                             return;
                         }
 
@@ -98,44 +104,64 @@ public class RealtimeClient {
                             }
                         }
 
+                        if (!isActiveConnection(generation)) {
+                            return;
+                        }
                         String token = body.getToken();
                         String url = INNGEST_WS_URL + URLEncoder.encode(token, StandardCharsets.UTF_8);
                         Log.d(TAG, "Connecting realtime stream " + streamType + " to " + INNGEST_WS_URL + "<token>");
                         Request request = new Request.Builder().url(url).build();
-                        webSocket = okHttpClient.newWebSocket(request, new InngestWebSocketListener());
+                        webSocket = okHttpClient.newWebSocket(request, new InngestWebSocketListener(generation));
                     }
 
                     @Override
                     public void onFailure(Call<RealtimeTokenResponse> call, Throwable t) {
+                        if (!isActiveConnection(generation)) {
+                            return;
+                        }
                         Log.w(TAG, "Realtime token request failed for " + streamType, t);
                         notifyError("Realtime token request failed");
-                        scheduleReconnect();
+                        scheduleReconnect(generation);
                     }
                 });
     }
 
-    private void scheduleReconnect() {
-        if (!reconnectEnabled) return;
+    private void scheduleReconnect(final int generation) {
+        if (!isActiveConnection(generation)) return;
         int delay = reconnectDelayMs;
         reconnectDelayMs = Math.min(reconnectDelayMs * 2, 10_000);
-        mainHandler.postDelayed(this::fetchTokenAndConnect, delay);
+        mainHandler.postDelayed(() -> fetchTokenAndConnect(generation), delay);
     }
 
     private void notifyStatus(String status) {
+        if (!reconnectEnabled) return;
         mainHandler.post(() -> listener.onStatus(streamType, status));
     }
 
     private void notifyError(String error) {
+        if (!reconnectEnabled) return;
         mainHandler.post(() -> listener.onError(streamType, error));
     }
 
     private void notifyData(JSONObject payload) {
+        if (!reconnectEnabled) return;
         mainHandler.post(() -> listener.onData(streamType, payload));
     }
 
+    private boolean isActiveConnection(int generation) {
+        return reconnectEnabled && generation == connectionGeneration;
+    }
+
     private class InngestWebSocketListener extends WebSocketListener {
+        private final int generation;
+
+        private InngestWebSocketListener(int generation) {
+            this.generation = generation;
+        }
+
         @Override
         public void onOpen(WebSocket webSocket, Response response) {
+            if (!isActiveConnection(generation)) return;
             reconnectDelayMs = 1000;
             Log.d(TAG, "Realtime websocket opened for " + streamType);
             notifyStatus("connected");
@@ -143,6 +169,7 @@ public class RealtimeClient {
 
         @Override
         public void onMessage(WebSocket webSocket, String text) {
+            if (!isActiveConnection(generation)) return;
             try {
                 JSONObject root = new JSONObject(text);
                 String kind = root.optString("kind", "");
@@ -160,16 +187,18 @@ public class RealtimeClient {
 
         @Override
         public void onClosed(WebSocket webSocket, int code, String reason) {
+            if (!isActiveConnection(generation)) return;
             Log.d(TAG, "Realtime websocket closed for " + streamType + " code=" + code + " reason=" + reason);
             notifyStatus("closed");
-            scheduleReconnect();
+            scheduleReconnect(generation);
         }
 
         @Override
         public void onFailure(WebSocket webSocket, Throwable t, Response response) {
+            if (!isActiveConnection(generation)) return;
             Log.w(TAG, "Realtime websocket failed for " + streamType, t);
             notifyStatus("failed");
-            scheduleReconnect();
+            scheduleReconnect(generation);
         }
     }
 
