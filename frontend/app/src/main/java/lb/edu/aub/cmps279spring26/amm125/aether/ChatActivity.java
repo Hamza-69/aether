@@ -38,12 +38,17 @@ import com.google.gson.JsonObject;
 
 import org.json.JSONObject;
 
+import java.io.IOException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TimeZone;
 
 import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiClient;
 import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiService;
@@ -60,6 +65,9 @@ import lb.edu.aub.cmps279spring26.amm125.aether.model.UpsertProjectSecretEntry;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.UpsertProjectSecretsRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.realtime.RealtimeClient;
 import lb.edu.aub.cmps279spring26.amm125.aether.utils.SecretCryptoUtil;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.ResponseBody;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
@@ -73,6 +81,8 @@ public class ChatActivity extends AppCompatActivity {
     private static final String SANDBOX_NOT_FOUND_MSG = "the sandbox was not found";
     private static final String CLOSED_PORT_MSG = "closed port error";
     private static final String CONNECTION_REFUSED_MSG = "connection refused on port";
+    private static final String E2B_SANDBOX_HEADER = "x-e2b-sandbox-id";
+    private static final long PREVIEW_STALE_THRESHOLD_MS = 20L * 60L * 1000L;
 
     private RecyclerView rvChat;
     private ChatAdapter adapter;
@@ -108,6 +118,7 @@ public class ChatActivity extends AppCompatActivity {
     private String activeAgentMessageId;
     private final ApiService apiService = ApiClient.getApiService();
     private final Map<String, RealtimeClient> realtimeClients = new HashMap<>();
+    private final OkHttpClient previewHealthClient = new OkHttpClient.Builder().build();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -219,7 +230,6 @@ public class ChatActivity extends AppCompatActivity {
 
         if (!TextUtils.isEmpty(projectId)) {
             loadMessages();
-            hydratePreviewUrl();
         } else if (!TextUtils.isEmpty(projectDesc)) {
             messageList.add(new ChatMessage(projectDesc, true));
             adapter.notifyItemInserted(messageList.size() - 1);
@@ -828,11 +838,14 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void triggerPreviewAction(String successMessage, Call<ActionResponse> call) {
+        previewRecoveryInProgress = true;
         startPreviewStatus(successMessage);
         call.enqueue(new Callback<ActionResponse>() {
             @Override
             public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
                 if (!response.isSuccessful()) {
+                    previewRecoveryInProgress = false;
+                    previewStarting = false;
                     appendPreviewStatusStep("Action failed (" + response.code() + ")");
                     if (tvPreviewStatusTitle != null) {
                         tvPreviewStatusTitle.setText("Preview failed");
@@ -844,17 +857,28 @@ public class ChatActivity extends AppCompatActivity {
                 connectRealtimeForType(STREAM_PREVIEW, true);
                 ActionResponse body = response.body();
                 String previewUrl = body != null ? body.getUrl() : null;
+                boolean alreadyRunning = body != null && Boolean.TRUE.equals(body.getAlreadyRunning());
+                boolean scheduled = body != null && Boolean.TRUE.equals(body.getScheduled());
                 if (!TextUtils.isEmpty(previewUrl)) {
                     setCurrentPreviewUrl(previewUrl);
-                    appendPreviewStatusStep("Preview job accepted by backend");
-                    appendPreviewStatusStep("Waiting for realtime updates...");
+                    appendPreviewStatusStep(alreadyRunning
+                            ? "Preview already running"
+                            : "Preview job accepted by backend");
+                    if (alreadyRunning) {
+                        stopRealtimeForType(STREAM_PREVIEW);
+                        showPreviewStatusReady(previewUrl);
+                    } else if (scheduled) {
+                        appendPreviewStatusStep("Waiting for realtime updates...");
+                    }
                 } else {
-                    appendPreviewStatusStep("Preview job accepted");
+                    appendPreviewStatusStep(scheduled ? "Preview job accepted" : "Waiting for realtime updates...");
                 }
             }
 
             @Override
             public void onFailure(Call<ActionResponse> call, Throwable t) {
+                previewRecoveryInProgress = false;
+                previewStarting = false;
                 appendPreviewStatusStep("Could not reach backend");
                 if (tvPreviewStatusTitle != null) {
                     tvPreviewStatusTitle.setText("Preview failed");
@@ -969,31 +993,29 @@ public class ChatActivity extends AppCompatActivity {
         inputContainer.setVisibility(View.GONE);
         previewContainer.setVisibility(View.VISIBLE);
 
-        if (!TextUtils.isEmpty(projectId)) {
-            connectRealtimeForType(STREAM_PREVIEW);
+        if (previewStatusMode) {
+            setPreviewStatusModeUI(true);
+            setPreviewLoading(false, null);
+            if (!TextUtils.isEmpty(projectId)) {
+                connectRealtimeForType(STREAM_PREVIEW);
+            }
+            return;
         }
 
-        if (!TextUtils.isEmpty(currentPreviewUrl)) {
-            if (previewStatusMode) {
-                webPreview.stopLoading();
-                webPreview.loadUrl("about:blank");
-                setPreviewLoading(false, null);
-                setPreviewStatusModeUI(true);
-            } else {
+        if (TextUtils.isEmpty(projectId)) {
+            if (!TextUtils.isEmpty(currentPreviewUrl)) {
                 setPreviewStatusModeUI(false);
                 setPreviewLoading(true, "Loading preview...");
                 webPreview.loadUrl(currentPreviewUrl);
-            }
-        } else if (!TextUtils.isEmpty(projectId)) {
-            if (previewStatusMode) {
-                setPreviewStatusModeUI(true);
-                setPreviewLoading(false, null);
             } else {
-                setPreviewStatusModeUI(false);
-                setPreviewLoading(true, "Checking preview...");
-                hydratePreviewUrl();
+                setPreviewLoading(false, null);
             }
+            return;
         }
+
+        setPreviewStatusModeUI(false);
+        setPreviewLoading(true, "Checking preview...");
+        hydratePreviewUrl();
     }
 
     private void setToggleState(boolean chatActive) {
@@ -1060,6 +1082,8 @@ public class ChatActivity extends AppCompatActivity {
 
     private void startPreviewStatus(String title) {
         previewStatusMode = true;
+        previewStarting = true;
+        previewErrorShown = false;
         renderedPreviewUrl = null;
         previewStatusSteps.setLength(0);
         lastPreviewStatusLine = "";
@@ -1099,6 +1123,9 @@ public class ChatActivity extends AppCompatActivity {
 
     private void showPreviewStatusReady(String rawUrl) {
         previewStatusMode = false;
+        previewStarting = false;
+        previewRecoveryInProgress = false;
+        previewErrorShown = false;
         String normalizedUrl = normalizeUrl(rawUrl);
         appendPreviewStatusStep("Preview marked RUNNING");
         setPreviewStatusModeUI(false);
@@ -1147,54 +1174,99 @@ public class ChatActivity extends AppCompatActivity {
         if (previewErrorShown) return;
         previewErrorShown = true;
         previewStarting = false;
+        previewRecoveryInProgress = false;
         currentPreviewUrl = null;
         tvPreviewHint.setText(message);
         setPreviewLoading(true, message);
         webPreview.stopLoading();
         webPreview.loadUrl("about:blank");
-        restartPreviewAfterInvalidPage(message);
+        showInfoSnackbar(message);
     }
 
-    private void restartPreviewAfterInvalidPage(String message) {
-        if (previewRecoveryInProgress || TextUtils.isEmpty(projectId)) {
-            showInfoSnackbar(message);
-            return;
+    private interface PreviewHealthListener {
+        void onResult(boolean running);
+    }
+
+    private boolean isPreviewStale(String previewStartedAt) {
+        long startedAtMs = parseIsoUtcMillis(previewStartedAt);
+        if (startedAtMs <= 0L) return false;
+        return System.currentTimeMillis() - startedAtMs >= PREVIEW_STALE_THRESHOLD_MS;
+    }
+
+    private long parseIsoUtcMillis(String isoText) {
+        if (TextUtils.isEmpty(isoText)) return -1L;
+        String[] patterns = {
+                "yyyy-MM-dd'T'HH:mm:ss.SSSX",
+                "yyyy-MM-dd'T'HH:mm:ssX",
+        };
+        for (String pattern : patterns) {
+            try {
+                SimpleDateFormat parser = new SimpleDateFormat(pattern, Locale.US);
+                parser.setTimeZone(TimeZone.getTimeZone("UTC"));
+                Date parsed = parser.parse(isoText);
+                if (parsed != null) {
+                    return parsed.getTime();
+                }
+            } catch (ParseException ignored) {
+                // Try the next format.
+            }
         }
+        return -1L;
+    }
 
-        previewRecoveryInProgress = true;
-        previewStarting = true;
-        startPreviewStatus("Restarting preview");
-        tvPreviewHint.setText(message + ". Restarting preview...");
-        setPreviewLoading(true, "Restarting preview...");
-        apiService.restartPreview(projectId).enqueue(new Callback<ActionResponse>() {
+    private void verifyRunningPreview(BackendProject project, String rawUrl) {
+        checkPreviewHealth(project, rawUrl, running -> {
+            if (running) {
+                previewStarting = false;
+                previewRecoveryInProgress = false;
+                loadPreviewUrl(rawUrl, false);
+                return;
+            }
+            triggerPreviewAction("Preview is unavailable. Restarting...", apiService.restartPreview(projectId));
+        });
+    }
+
+    private void checkPreviewHealth(BackendProject project, String rawUrl, PreviewHealthListener listener) {
+        String url = normalizeUrl(rawUrl);
+        Request request = new Request.Builder().url(url).get().build();
+        previewHealthClient.newCall(request).enqueue(new okhttp3.Callback() {
             @Override
-            public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
-                if (!response.isSuccessful()) {
-                    previewRecoveryInProgress = false;
-                    tvPreviewHint.setText("Preview restart failed");
-                    setPreviewLoading(false, null);
-                    showInfoSnackbar("Preview restart failed (" + response.code() + ")");
-                    return;
-                }
-
-                connectRealtimeForType(STREAM_PREVIEW, true);
-                ActionResponse body = response.body();
-                String previewUrl = body != null ? body.getUrl() : null;
-                if (!TextUtils.isEmpty(previewUrl)) {
-                    setCurrentPreviewUrl(previewUrl);
-                    appendPreviewStatusStep("Preview job accepted by backend");
-                } else {
-                    tvPreviewHint.setText("Preview restart requested");
-                    setPreviewLoading(true, "Preview restart requested...");
-                }
+            public void onFailure(okhttp3.Call call, IOException e) {
+                runOnUiThread(() -> listener.onResult(false));
             }
 
             @Override
-            public void onFailure(Call<ActionResponse> call, Throwable t) {
-                previewRecoveryInProgress = false;
-                tvPreviewHint.setText("Could not restart preview");
-                setPreviewLoading(false, null);
-                showInfoSnackbar("Could not reach backend");
+            public void onResponse(okhttp3.Call call, okhttp3.Response response) {
+                boolean running = false;
+                boolean successful = response.isSuccessful();
+                String expectedSandboxId = project != null ? project.getPreviewSandboxId() : null;
+                String observedSandboxId = response.header(E2B_SANDBOX_HEADER);
+                if (!TextUtils.isEmpty(observedSandboxId)) {
+                    running = TextUtils.isEmpty(expectedSandboxId)
+                            || expectedSandboxId.equalsIgnoreCase(observedSandboxId);
+                }
+
+                String pageContent = "";
+                try (okhttp3.Response ignored = response) {
+                    ResponseBody body = response.body();
+                    if (body != null) {
+                        pageContent = body.string();
+                    }
+                } catch (IOException e) {
+                    runOnUiThread(() -> listener.onResult(false));
+                    return;
+                }
+                String lowerContent = pageContent.toLowerCase(Locale.US);
+                boolean knownError = lowerContent.contains(SANDBOX_NOT_FOUND_MSG)
+                        || lowerContent.contains("bad gateway")
+                        || lowerContent.contains(CLOSED_PORT_MSG)
+                        || lowerContent.contains(CONNECTION_REFUSED_MSG);
+                if (!running) {
+                    running = successful && !knownError;
+                }
+
+                boolean finalRunning = running;
+                runOnUiThread(() -> listener.onResult(finalRunning));
             }
         });
     }
@@ -1233,10 +1305,18 @@ public class ChatActivity extends AppCompatActivity {
                     return;
                 }
 
-                if (running && !TextUtils.isEmpty(url)) {
-                    previewStarting = false;
-                    previewRecoveryInProgress = false;
-                    loadPreviewUrl(url, false);
+                if (running) {
+                    if (TextUtils.isEmpty(url)) {
+                        triggerPreviewAction("Preview is unavailable. Restarting...", apiService.restartPreview(projectId));
+                        return;
+                    }
+                    setCurrentPreviewUrl(url);
+                    if (isPreviewStale(project != null ? project.getPreviewStartedAt() : null)) {
+                        triggerPreviewAction("Preview is stale. Restarting...", apiService.restartPreview(projectId));
+                        return;
+                    }
+                    setPreviewLoading(true, "Checking preview runtime...");
+                    verifyRunningPreview(project, url);
                     return;
                 }
 

@@ -6,6 +6,8 @@ public class BackendProject {
     private String screenshotUrl;
     private String previewStatus;
     private String previewUrl;
+    private String previewStartedAt;
+    private String previewSandboxId;
     private boolean isPublished;
     private String createdAt;
     private String updatedAt;
@@ -24,6 +26,12 @@ public class BackendProject {
 
     public String getPreviewUrl() { return previewUrl; }
     public void setPreviewUrl(String previewUrl) { this.previewUrl = previewUrl; }
+
+    public String getPreviewStartedAt() { return previewStartedAt; }
+    public void setPreviewStartedAt(String previewStartedAt) { this.previewStartedAt = previewStartedAt; }
+
+    public String getPreviewSandboxId() { return previewSandboxId; }
+    public void setPreviewSandboxId(String previewSandboxId) { this.previewSandboxId = previewSandboxId; }
 
     public boolean isPublished() { return isPublished; }
     public void setPublished(boolean published) { isPublished = published; }
