@@ -86,7 +86,7 @@ public interface ApiService {
     @POST("projects/{projectId}/deploy")
     Call<ActionResponse> deployProject(@Path("projectId") String projectId);
 
-    @GET("projects/{projectId}/deploy")
+    @GET("projects/{projectId}/deployments")
     Call<DeploymentsResponse> getProjectDeployments(@Path("projectId") String projectId);
 
     @POST("projects/{projectId}/keystore")

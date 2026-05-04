@@ -159,7 +159,8 @@ public class ExportActivity extends AppCompatActivity {
         );
         btnInstallLatestApk.setOnClickListener(v -> openLatestApkInstallLink());
 
-        applyKeystoreActionStyle(false);
+        setActionButtonEnabled(btnDeploy, true);
+        setActionButtonEnabled(btnKeystore, true);
         updateExportApkAvailabilityUi();
         hydrateProgressFromStreamChunks(STREAM_DEPLOY);
         hydrateProgressFromStreamChunks(STREAM_GENERATE_KEYSTORE);
@@ -318,12 +319,15 @@ public class ExportActivity extends AppCompatActivity {
         }
 
         if (!TextUtils.isEmpty(url)) {
-            if (!TextUtils.isEmpty(message)) {
+            boolean messageAlreadyHasUrl = !TextUtils.isEmpty(message) && message.contains(url);
+            if (!TextUtils.isEmpty(message) && !messageAlreadyHasUrl) {
                 views.status.setText(message + "\n" + url);
-            } else {
+            } else if (TextUtils.isEmpty(message)) {
                 views.status.setText(url);
             }
-            appendProgress(streamType, "URL: " + url);
+            if (!messageAlreadyHasUrl) {
+                appendProgress(streamType, "URL: " + url);
+            }
         }
 
         if (error || done) {
@@ -425,9 +429,9 @@ public class ExportActivity extends AppCompatActivity {
         if (views == null) return;
         boolean disableAction = loading || (STREAM_GENERATE_KEYSTORE.equals(streamType) && keystoreLocked);
         if (STREAM_EXPORT_APK.equals(streamType)) {
-            views.actionButton.setEnabled(!loading && hasDeploymentForApk && hasKeystoreForApk);
+            setActionButtonEnabled(views.actionButton, !loading && hasDeploymentForApk && hasKeystoreForApk);
         } else {
-            views.actionButton.setEnabled(!disableAction);
+            setActionButtonEnabled(views.actionButton, !disableAction);
         }
         views.progress.setVisibility(loading ? View.VISIBLE : View.GONE);
         if (loading && !TextUtils.isEmpty(message)) {
@@ -439,36 +443,40 @@ public class ExportActivity extends AppCompatActivity {
         StreamViews deploy = streamViews.get(STREAM_DEPLOY);
         StreamViews keystore = streamViews.get(STREAM_GENERATE_KEYSTORE);
         StreamViews apk = streamViews.get(STREAM_EXPORT_APK);
-        if (deploy != null) deploy.actionButton.setEnabled(enabled);
-        if (keystore != null) keystore.actionButton.setEnabled(enabled && !keystoreLocked);
-        if (apk != null) apk.actionButton.setEnabled(enabled && hasDeploymentForApk && hasKeystoreForApk);
+        if (deploy != null) setActionButtonEnabled(deploy.actionButton, enabled);
+        if (keystore != null) setActionButtonEnabled(keystore.actionButton, enabled && !keystoreLocked);
+        if (apk != null) setActionButtonEnabled(apk.actionButton, enabled && hasDeploymentForApk && hasKeystoreForApk);
     }
 
     private void lockKeystoreGenerationUi() {
         keystoreLocked = true;
+        hasKeystoreForApk = true;
         StreamViews keystore = streamViews.get(STREAM_GENERATE_KEYSTORE);
         if (keystore == null) return;
-        keystore.actionButton.setEnabled(false);
+        setActionButtonEnabled(keystore.actionButton, false);
         keystore.actionButton.setText("Keystore Generated");
         keystore.status.setText("Keystore already generated. Regeneration is blocked.");
-        applyKeystoreActionStyle(true);
+        updateExportApkAvailabilityUi();
     }
 
-    private void applyKeystoreActionStyle(boolean locked) {
-        StreamViews keystore = streamViews.get(STREAM_GENERATE_KEYSTORE);
-        if (keystore == null) return;
+    private void setActionButtonEnabled(MaterialButton button, boolean enabled) {
+        if (button == null) return;
+        button.setEnabled(enabled);
+        applyPrimaryActionStyle(button, enabled);
+    }
 
-        if (locked) {
-            keystore.actionButton.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#E5E7EB")));
-            keystore.actionButton.setTextColor(Color.parseColor("#374151"));
-            keystore.actionButton.setStrokeColor(ColorStateList.valueOf(Color.parseColor("#D1D5DB")));
-            keystore.actionButton.setStrokeWidth((int) (1 * getResources().getDisplayMetrics().density));
+    private void applyPrimaryActionStyle(MaterialButton button, boolean enabled) {
+        if (button == null) return;
+        if (enabled) {
+            button.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#7A4DF3")));
+            button.setTextColor(Color.WHITE);
+            button.setStrokeWidth(0);
             return;
         }
-
-        keystore.actionButton.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#7A4DF3")));
-        keystore.actionButton.setTextColor(Color.WHITE);
-        keystore.actionButton.setStrokeWidth(0);
+        button.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#E5E7EB")));
+        button.setTextColor(Color.parseColor("#374151"));
+        button.setStrokeColor(ColorStateList.valueOf(Color.parseColor("#D1D5DB")));
+        button.setStrokeWidth((int) (1 * getResources().getDisplayMetrics().density));
     }
 
     private void hydrateProgressFromStreamChunks(String streamType) {
@@ -624,7 +632,7 @@ public class ExportActivity extends AppCompatActivity {
         StreamViews apk = streamViews.get(STREAM_EXPORT_APK);
         if (apk == null) return;
         boolean enabled = hasDeploymentForApk && hasKeystoreForApk && apk.progress.getVisibility() != View.VISIBLE;
-        apk.actionButton.setEnabled(enabled);
+        setActionButtonEnabled(apk.actionButton, enabled);
         if (!enabled && apk.progress.getVisibility() != View.VISIBLE) {
             if (!hasDeploymentForApk && !hasKeystoreForApk) {
                 apk.status.setText("Requires deployment and keystore");
