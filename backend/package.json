@@ -9,7 +9,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "set INNGEST_DEV=1&& tsx watch index.ts",
-    "build": "npm run prisma:generate && tsc",
+    "build": "npm run prisma:generate && tsup index.ts --format esm --out-dir dist --no-splitting --clean",
     "start": "node dist/index.js",
     "ai": "npx -y inngest-cli@1.15.0 dev -u http://localhost:3000/api/inngest",
     "prisma:generate": "prisma generate",
@@ -52,6 +52,7 @@
     "@types/node": "^25.5.2",
     "@types/pg": "^8.20.0",
     "prisma": "^7.7.0",
+    "tsup": "^8.4.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   }

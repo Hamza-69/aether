@@ -33,7 +33,7 @@ public class RealtimeClient {
         void onError(String streamType, String errorMessage);
     }
 
-    private static final String INNGEST_WS_URL = "ws://10.0.2.2:8288/v1/realtime/connect?token=";
+    private static final String INNGEST_WS_URL = "wss:///api.inngest.com/v1/realtime/connect?token=";
 
     private final ApiService apiService;
     private final OkHttpClient okHttpClient;
