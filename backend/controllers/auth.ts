@@ -3,6 +3,8 @@ import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 import { prisma } from "../lib/prisma"
 import { sendEmail } from "../lib/email"
+import { requireAuth } from "../lib/auth"
+import { uploadProfilePicture, getProfilePictureUrl } from "../lib/storage"
 
 export const authRouter = express.Router()
 
@@ -241,76 +243,6 @@ authRouter.post("/signin", async (req, res) => {
       })
     }
 
-    const code = generateOtpCode()
-    const challengeId = generateChallengeId()
-    const expiresAt = Date.now() + OTP_EXPIRES_IN_MS
-
-    challenges.set(challengeId, {
-      type: "signin",
-      email: normalizedEmail,
-      code,
-      expiresAt,
-      userId: user.id,
-    })
-
-    await sendOtpEmail(normalizedEmail, code)
-
-    return res.status(200).json({
-      message: "Verification code sent",
-      challengeId,
-      expiresAt,
-    })
-  } catch (error) {
-    console.error("Signin error:", error)
-
-    return res.status(500).json({
-      message: "Server error during signin",
-    })
-  }
-})
-
-authRouter.post("/signin/verify", async (req, res) => {
-  try {
-    const { challengeId, code } = req.body
-
-    if (!challengeId || !code) {
-      return res.status(400).json({
-        message: "challengeId and code are required",
-      })
-    }
-
-    const challenge = challenges.get(challengeId)
-    if (!challenge || challenge.type !== "signin") {
-      return res.status(400).json({
-        message: "Invalid verification challenge",
-      })
-    }
-
-    if (challenge.expiresAt < Date.now()) {
-      challenges.delete(challengeId)
-      return res.status(400).json({
-        message: "Verification code expired",
-      })
-    }
-
-    if (challenge.code !== code) {
-      return res.status(400).json({
-        message: "Invalid verification code",
-      })
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: challenge.userId },
-    })
-
-    if (!user) {
-      challenges.delete(challengeId)
-      return res.status(404).json({
-        message: "User not found",
-      })
-    }
-
-    challenges.delete(challengeId)
     const token = createToken(user)
 
     return res.status(200).json({
@@ -324,10 +256,10 @@ authRouter.post("/signin/verify", async (req, res) => {
       },
     })
   } catch (error) {
-    console.error("Signin verify error:", error)
+    console.error("Signin error:", error)
 
     return res.status(500).json({
-      message: "Server error during signin verification",
+      message: "Server error during signin",
     })
   }
 })
@@ -482,3 +414,173 @@ authRouter.post("/password/reset", async (req, res) => {
     })
   }
 })
+
+// GET CURRENT USER
+authRouter.get("/me", requireAuth, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        email: true,
+        profilePicture: true,
+        createdAt: true,
+      },
+    })
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" })
+    }
+
+    let profilePictureUrl: string | null = null
+    if (user.profilePicture) {
+      profilePictureUrl = await getProfilePictureUrl(user.profilePicture)
+    }
+
+    return res.status(200).json({
+      user: {
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        profilePictureUrl,
+        createdAt: user.createdAt,
+      },
+    })
+  } catch (error) {
+    console.error("Get current user error:", error)
+    return res.status(500).json({
+      message: "Server error while fetching user",
+    })
+  }
+})
+
+// CHANGE PASSWORD (authenticated)
+authRouter.put("/me/password", requireAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        message: "currentPassword and newPassword are required",
+      })
+    }
+
+    if (typeof newPassword !== "string" || newPassword.length < 6) {
+      return res.status(400).json({
+        message: "New password must be at least 6 characters",
+      })
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+    })
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" })
+    }
+
+    const isCurrentPasswordCorrect = await bcrypt.compare(
+      currentPassword,
+      user.password
+    )
+
+    if (!isCurrentPasswordCorrect) {
+      return res.status(401).json({
+        message: "Current password is incorrect",
+      })
+    }
+
+    const isSamePassword = await bcrypt.compare(newPassword, user.password)
+    if (isSamePassword) {
+      return res.status(400).json({
+        message: "New password must be different from the current password",
+      })
+    }
+
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10)
+
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { password: hashedNewPassword },
+    })
+
+    return res.status(200).json({
+      message: "Password changed successfully",
+    })
+  } catch (error) {
+    console.error("Change password error:", error)
+    return res.status(500).json({
+      message: "Server error while changing password",
+    })
+  }
+})
+
+// UPLOAD PROFILE PICTURE
+authRouter.put("/me/profile-picture", requireAuth, async (req, res) => {
+  try {
+    const { image, mimeType } = req.body
+
+    if (!image || !mimeType) {
+      return res.status(400).json({
+        message: "image (base64) and mimeType are required",
+      })
+    }
+
+    const allowedTypes = ["image/png", "image/jpeg", "image/webp", "image/gif"]
+    if (!allowedTypes.includes(mimeType)) {
+      return res.status(400).json({
+        message: `Unsupported image type. Allowed: ${allowedTypes.join(", ")}`,
+      })
+    }
+
+    // Limit file size (~5 MB in base64 ≈ ~6.7 MB string)
+    const MAX_BASE64_LENGTH = 7 * 1024 * 1024
+    if (image.length > MAX_BASE64_LENGTH) {
+      return res.status(400).json({
+        message: "Image too large. Maximum size is 5 MB",
+      })
+    }
+
+    const key = await uploadProfilePicture(req.user!.id, image, mimeType)
+
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { profilePicture: key },
+    })
+
+    const profilePictureUrl = await getProfilePictureUrl(key)
+
+    return res.status(200).json({
+      message: "Profile picture updated",
+      profilePictureUrl,
+    })
+  } catch (error) {
+    console.error("Upload profile picture error:", error)
+    return res.status(500).json({
+      message: "Server error while uploading profile picture",
+    })
+  }
+})
+
+// DELETE PROFILE PICTURE
+authRouter.delete("/me/profile-picture", requireAuth, async (req, res) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { profilePicture: null },
+    })
+
+    return res.status(200).json({
+      message: "Profile picture removed",
+    })
+  } catch (error) {
+    console.error("Delete profile picture error:", error)
+    return res.status(500).json({
+      message: "Server error while removing profile picture",
+    })
+  }
+})
+

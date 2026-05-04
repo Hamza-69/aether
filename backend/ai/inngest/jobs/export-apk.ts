@@ -1,7 +1,7 @@
 import { Sandbox } from "e2b"
 import { inngest } from "../client"
 import { prisma } from "../../../lib/prisma"
-import { getSandbox } from "../../../lib/utils"
+import { getSandbox, publish as publishFunction } from "../../../lib/utils"
 import { getStateDownloadUrl, uploadState } from "../../../lib/storage"
 import { decrypt } from "../../../lib/encryption"
 import { stringifyEnv } from "../../../lib/projectSecrets"
@@ -34,18 +34,32 @@ const scrub = (output: string, ...tokens: string[]): string => {
 const loadExpoToken = async (projectId: string): Promise<string> => {
   const row = await prisma.secret.findUnique({
     where: { projectId_name: { projectId, name: EXPO_SECRET_NAME } },
-    select: { encryptedValue: true },
+    select: { encryptedValue: true, useUserSecret: true },
   })
-  if (!row) throw new Error(`${EXPO_SECRET_NAME} not set for project`)
-  return decrypt(Buffer.from(row.encryptedValue)).toString("utf8")
+  
+  let encryptedValue = row?.encryptedValue
+  if (!row || row.useUserSecret) {
+    const project = await prisma.project.findUnique({ where: { id: projectId }, select: { userId: true } })
+    const userRow = await prisma.userSecret.findUnique({
+      where: { userId_name: { userId: project!.userId, name: EXPO_SECRET_NAME } },
+      select: { encryptedValue: true },
+    })
+    encryptedValue = userRow?.encryptedValue ?? null
+  }
+
+  if (!encryptedValue) throw new Error(`${EXPO_SECRET_NAME} token is empty`)
+  return decrypt(Buffer.from(encryptedValue)).toString("utf8")
 }
 
 const loadKeystorePassword = async (projectId: string): Promise<string> => {
   const row = await prisma.keyStore.findUnique({
     where: { projectId },
-    select: { password: true },
+    select: { password: true, completed: true },
   })
   if (!row) throw new Error("Keystore not found for project")
+  if (!row.completed || !row.password) {
+    throw new Error("Keystore generation has not finished for project")
+  }
   return decrypt(Buffer.from(row.password)).toString("utf8")
 }
 
@@ -84,8 +98,47 @@ export const exportApkFunction = inngest.createFunction(
     concurrency: [{ key: "event.data.projectId", limit: 1 }],
   },
   { event: "export-apk/run" },
-  async ({ event, step }) => {
+  async ({ event, step, publish }: { event: any, step: any, publish: Function }) => {
     const { projectId } = event.data as { projectId: string }
+
+    // Resolve the project owner so channels are scoped per user
+    const projectOwner = await step.run("resolve-project-owner", async () => {
+      return prisma.project.findUniqueOrThrow({
+        where: { id: projectId },
+        select: { userId: true },
+      })
+    })
+    const channel = "project_export_apk:" + projectOwner.userId + ":" + projectId
+
+    const { messageId, streamId } = await step.run("create-initial-message", async () => {
+      const created = await prisma.message.create({
+        data: {
+          projectId,
+          content: "",
+          role: "ASSISTANT",
+          type: "SUCCESS",
+        },
+      })
+
+      const stream = await prisma.stream.create({
+        data: { messageId: created.id },
+      })
+
+      const agentMessage = await prisma.message.findUnique({
+        where: { id: created.id },
+        include: { stream: true },
+      })
+
+      await publishFunction(
+        publish,
+        channel,
+        "export-apk",
+        agentMessage as any,
+        stream.id,
+      )
+
+      return { messageId: created.id, streamId: stream.id }
+    })
 
     await step.run("mark-apk-running", async () => {
       await prisma.project.update({
@@ -95,10 +148,18 @@ export const exportApkFunction = inngest.createFunction(
           apkStartedAt: new Date(),
         },
       })
+
+      await publishFunction(
+        publish,
+        channel,
+        "export-apk",
+        { message: "Starting APK export..." },
+        streamId,
+      )
     })
 
     try {
-      return await runExportApkPipeline(projectId, step)
+      return await runExportApkPipeline(projectId, step, publish, channel, messageId, streamId)
     } finally {
       await step.run("release-apk-lock", async () => {
         await prisma.project.update({
@@ -113,8 +174,19 @@ export const exportApkFunction = inngest.createFunction(
 const runExportApkPipeline = async (
   projectId: string,
   step: Parameters<Parameters<typeof inngest.createFunction>[2]>[0]["step"],
+  publish: Function,
+  channel: string,
+  messageId: string,
+  streamId: string,
 ) => {
   const fragment = await step.run("get-latest-fragment", async () => {
+    await publishFunction(
+      publish,
+      channel,
+      "export-apk",
+      { message: "Looking up the latest frontend fragment..." },
+      streamId,
+    )
     const latest = await prisma.message.findFirst({
       where: {
         projectId,
@@ -142,6 +214,13 @@ const runExportApkPipeline = async (
   })
 
   const sandboxId = await step.run("create-sandbox", async () => {
+    await publishFunction(
+      publish,
+      channel,
+      "export-apk",
+      { message: "Spinning up an APK build sandbox..." },
+      streamId,
+    )
     const sandbox = await Sandbox.create("build-apk")
     await sandbox.setTimeout(60_000 * 60)
     return sandbox.sandboxId
@@ -152,6 +231,13 @@ const runExportApkPipeline = async (
   })
 
   await step.run("restore-frontend", async () => {
+    await publishFunction(
+      publish,
+      channel,
+      "export-apk",
+      { message: "Restoring the frontend state..." },
+      streamId,
+    )
     const sandbox = await getSandbox(sandboxId)
     try {
       await sandbox.commands.run(
@@ -176,9 +262,12 @@ const runExportApkPipeline = async (
     const sandbox = await getSandbox(sandboxId)
     const row = await prisma.keyStore.findUnique({
       where: { projectId },
-      select: { data: true },
+      select: { data: true, completed: true },
     })
     if (!row) throw new Error("Keystore not found for project")
+    if (!row.completed || !row.data) {
+      throw new Error("Keystore generation has not finished for project")
+    }
     const buf = Buffer.from(row.data)
     const ab = new ArrayBuffer(buf.length)
     new Uint8Array(ab).set(buf)
@@ -189,6 +278,13 @@ const runExportApkPipeline = async (
   // only needs to live long enough to trigger the build; actual build runs
   // on EAS infra and we poll for completion below.
   const buildId = await step.run("kickoff-eas-build", async () => {
+    await publishFunction(
+      publish,
+      channel,
+      "export-apk",
+      { message: "Kicking off the EAS build..." },
+      streamId,
+    )
     const sandbox = await getSandbox(sandboxId)
     await sandbox.setTimeout(60_000 * 60)
     const expoToken = await loadExpoToken(projectId)
@@ -242,8 +338,16 @@ const runExportApkPipeline = async (
           status?: string
           artifacts?: { applicationArchiveUrl?: string }
         }
+        const status = json.status ?? "UNKNOWN"
+        await publishFunction(
+          publish,
+          channel,
+          "export-apk",
+          { message: `EAS build status: ${status}`, buildId, status },
+          streamId,
+        )
         return {
-          status: json.status ?? "UNKNOWN",
+          status,
           url: json.artifacts?.applicationArchiveUrl ?? null,
         }
       } catch (e) {
@@ -272,6 +376,13 @@ const runExportApkPipeline = async (
   }
 
   const apkKey = await step.run("fetch-and-upload-apk", async () => {
+    await publishFunction(
+      publish,
+      channel,
+      "export-apk",
+      { message: "Downloading and storing the APK..." },
+      streamId,
+    )
     const response = await fetch(apkDownloadUrl)
     if (!response.ok) {
       throw new Error(`Failed to download APK from EAS (${response.status}): ${apkDownloadUrl}`)
@@ -294,15 +405,29 @@ const runExportApkPipeline = async (
       },
     })
 
-    await prisma.message.create({
+    const finalMessage = await prisma.message.update({
+      where: { id: messageId },
       data: {
-        projectId,
         content: `APK exported successfully.`,
-        role: "ASSISTANT",
         type: "SUCCESS",
         fragmentId: newFragment.id,
+        completed: true,
       },
+      include: { fragment: true, stream: true },
     })
+
+    await prisma.stream.update({
+      where: { id: streamId },
+      data: { apkId: created.id },
+    })
+
+    await publishFunction(
+      publish,
+      channel,
+      "export-apk",
+      { message: finalMessage as any, apk: created as any, done: true },
+      streamId,
+    )
 
     return created
   })

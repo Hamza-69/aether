@@ -1,0 +1,12 @@
+{
+  "name": "realtime-demo",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "aether-realtime": "./subscribe.mjs"
+  },
+  "scripts": {
+    "start": "node subscribe.mjs"
+  }
+}

@@ -2,7 +2,11 @@ package lb.edu.aub.cmps279spring26.amm125.aether;
 
 import android.app.Dialog;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -14,17 +18,29 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
+
+import com.bumptech.glide.Glide;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.snackbar.BaseTransientBottomBar;
 import com.google.android.material.snackbar.Snackbar;
+
 import java.util.List;
+
+import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiClient;
+import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiService;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.ActionResponse;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectViewHolder> {
 
     private List<Project> projects;
     private OnProjectDeletedListener deleteListener;
+    private final ApiService apiService = ApiClient.getApiService();
 
     public interface OnProjectDeletedListener {
         void onProjectDeleted();
@@ -46,8 +62,20 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
     public void onBindViewHolder(@NonNull ProjectViewHolder holder, int position) {
         Project project = projects.get(position);
         holder.tvTitle.setText(project.getTitle());
-        
+
         updateStatusUI(holder, project.getStatus());
+        holder.authorContainer.setVisibility(View.GONE);
+        holder.optionsCard.setVisibility(View.GONE);
+        holder.optionsCard.setOnClickListener(null);
+
+        if (project.getScreenshotUrl() != null && !project.getScreenshotUrl().trim().isEmpty()) {
+            Glide.with(holder.itemView.getContext())
+                    .load(project.getScreenshotUrl())
+                    .placeholder(android.R.color.darker_gray)
+                    .into(holder.ivProjectImage);
+        } else {
+            holder.ivProjectImage.setImageBitmap(createInitialsBitmap(project.getTitle()));
+        }
 
         holder.itemView.setOnClickListener(v -> {
             Intent intent = new Intent(v.getContext(), ChatActivity.class);
@@ -55,12 +83,41 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
             intent.putExtra("PROJECT_DESC", project.getDescription());
             intent.putExtra("PROJECT_STATUS", project.getStatus());
             intent.putExtra("PROJECT_INDEX", HomeActivity.userProjects.indexOf(project));
+            intent.putExtra("PROJECT_ID", project.getBackendId());
             v.getContext().startActivity(intent);
         });
 
-        holder.optionsCard.setOnClickListener(v -> {
-            showEnhancedOptionsMenu(v, project, position);
-        });
+    }
+
+    private Bitmap createInitialsBitmap(String title) {
+        int size = 600;
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Paint bgPaint = new Paint();
+        bgPaint.setColor(Color.parseColor("#7C4DFF"));
+        canvas.drawRect(0, 0, size, size, bgPaint);
+
+        String initials = "A";
+        if (title != null && !title.trim().isEmpty()) {
+            String[] parts = title.trim().split("\\s+");
+            if (parts.length >= 2) {
+                initials = (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
+            } else {
+                initials = parts[0].substring(0, 1).toUpperCase();
+            }
+        }
+
+        Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        textPaint.setColor(Color.WHITE);
+        textPaint.setTextAlign(Paint.Align.CENTER);
+        textPaint.setTextSize(220f);
+        textPaint.setFakeBoldText(true);
+        Rect bounds = new Rect();
+        textPaint.getTextBounds(initials, 0, initials.length(), bounds);
+        float x = size / 2f;
+        float y = (size / 2f) - bounds.exactCenterY();
+        canvas.drawText(initials, x, y, textPaint);
+        return bitmap;
     }
 
     private void updateStatusUI(ProjectViewHolder holder, String status) {
@@ -86,8 +143,8 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
             int[] location = new int[2];
             v.getLocationOnScreen(location);
             android.view.WindowManager.LayoutParams params = window.getAttributes();
-            params.x = 20; 
-            params.y = location[1] + v.getHeight(); 
+            params.x = 20;
+            params.y = location[1] + v.getHeight();
             window.setAttributes(params);
             window.setWindowAnimations(android.R.style.Animation_Dialog);
         }
@@ -98,17 +155,17 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         LinearLayout optUpdate = dialog.findViewById(R.id.optionUpdate);
         LinearLayout optExport = dialog.findViewById(R.id.optionExport);
         LinearLayout optDelete = dialog.findViewById(R.id.optionDelete);
-        
+
         ImageView ivPublishIcon = dialog.findViewById(R.id.ivPublishIcon);
         TextView tvPublishText = dialog.findViewById(R.id.tvPublishText);
 
         boolean isPublished = "Published".equalsIgnoreCase(project.getStatus());
-        
+
         if (isPublished) {
             tvPublishText.setText("Unpublish");
             ivPublishIcon.setImageResource(R.drawable.ic_back);
             ivPublishIcon.setImageTintList(android.content.res.ColorStateList.valueOf(Color.GRAY));
-            
+
             if (project.hasUnpublishedChanges()) {
                 optUpdate.setVisibility(View.VISIBLE);
             }
@@ -119,7 +176,7 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         }
 
         optDeploy.setOnClickListener(view -> {
-            showInfoSnackbar(v, "Deploying application preview...");
+            showInfoSnackbar(v, "Open project chat to deploy this project");
             dialog.dismiss();
         });
 
@@ -129,14 +186,18 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         });
 
         optPublish.setOnClickListener(view -> {
+            if (project.getBackendId() == null || project.getBackendId().trim().isEmpty()) {
+                showInfoSnackbar(v, "This project is not linked to backend yet");
+                dialog.dismiss();
+                return;
+            }
             if (isPublished) {
-                unpublishProject(project);
-                showInfoSnackbar(v, "Project unpublished and removed from Discover");
+                unpublishProject(project, position, v);
             } else {
                 dialog.dismiss();
                 showPublishCategoryDialog(v.getContext(), project, position, v, false);
+                return;
             }
-            notifyItemChanged(position);
             dialog.dismiss();
         });
 
@@ -146,7 +207,7 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         });
 
         optExport.setOnClickListener(view -> {
-            showInfoSnackbar(v, "Preparing APK for export...");
+            showInfoSnackbar(v, "Open project chat to export this project APK");
             dialog.dismiss();
         });
 
@@ -161,12 +222,6 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
     private void unpublishProject(Project project) {
         project.setStatus("Not Published");
         project.setHasUnpublishedChanges(false);
-        for (int i = 0; i < HomeActivity.communityProjects.size(); i++) {
-            if (HomeActivity.communityProjects.get(i).getId() == project.getId()) {
-                HomeActivity.communityProjects.remove(i);
-                break;
-            }
-        }
     }
 
     private void showPublishCategoryDialog(android.content.Context context, Project project, int position, View view, boolean isUpdate) {
@@ -199,26 +254,49 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
     }
 
     private void handlePublishAction(Project project, int position, View view, boolean isUpdate, String category) {
-        project.setStatus("Published");
-        project.setType(category);
-        project.setHasUnpublishedChanges(false);
-        
-        boolean foundInCommunity = false;
-        for (Project p : HomeActivity.communityProjects) {
-            if (p.getId() == project.getId()) {
-                p.setTitle(project.getTitle());
-                p.setType(category);
-                foundInCommunity = true;
-                break;
+        if (project.getBackendId() == null || project.getBackendId().trim().isEmpty()) {
+            showInfoSnackbar(view, "This project is not linked to backend yet");
+            return;
+        }
+        apiService.publishProject(project.getBackendId()).enqueue(new Callback<ActionResponse>() {
+            @Override
+            public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
+                if (!response.isSuccessful()) {
+                    showInfoSnackbar(view, "Publish failed (" + response.code() + ")");
+                    return;
+                }
+                project.setStatus("Published");
+                project.setType(category);
+                project.setHasUnpublishedChanges(false);
+                notifyItemChanged(position);
+                showSuccessSnackbar(view, isUpdate ? "Project updated in Discover!" : "Project published successfully!");
             }
-        }
-        
-        if (!foundInCommunity) {
-            HomeActivity.communityProjects.add(0, new Project(project));
-        }
-        
-        notifyItemChanged(position);
-        showSuccessSnackbar(view, isUpdate ? "Project updated in Discover!" : "Project published successfully!");
+
+            @Override
+            public void onFailure(Call<ActionResponse> call, Throwable t) {
+                showInfoSnackbar(view, "Could not reach backend");
+            }
+        });
+    }
+
+    private void unpublishProject(Project project, int position, View view) {
+        apiService.unpublishProject(project.getBackendId()).enqueue(new Callback<ActionResponse>() {
+            @Override
+            public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
+                if (!response.isSuccessful()) {
+                    showInfoSnackbar(view, "Unpublish failed (" + response.code() + ")");
+                    return;
+                }
+                unpublishProject(project);
+                notifyItemChanged(position);
+                showInfoSnackbar(view, "Project unpublished and removed from Discover");
+            }
+
+            @Override
+            public void onFailure(Call<ActionResponse> call, Throwable t) {
+                showInfoSnackbar(view, "Could not reach backend");
+            }
+        });
     }
 
     private void showRenameDialog(android.content.Context context, Project project, int position, View view) {
@@ -233,7 +311,7 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
 
         TextView tvTitle = dialog.findViewById(R.id.tvTitle);
         if (tvTitle != null) tvTitle.setText("Rename Project");
-        
+
         TextView tvSubtitle = dialog.findViewById(R.id.tvSubtitle);
         if (tvSubtitle != null) tvSubtitle.setText("Update your project's name");
 
@@ -241,8 +319,8 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         EditText etDesc = dialog.findViewById(R.id.etProjectDesc);
         View tvSuggestions = dialog.findViewById(R.id.tvSuggestions);
         View chipGroup = dialog.findViewById(R.id.chipGroupSuggestions);
-        
-        if (etDesc != null) ((View)etDesc.getParent()).setVisibility(View.GONE);
+
+        if (etDesc != null) ((View) etDesc.getParent()).setVisibility(View.GONE);
         if (tvSuggestions != null) tvSuggestions.setVisibility(View.GONE);
         if (chipGroup != null) chipGroup.setVisibility(View.GONE);
 
@@ -303,20 +381,42 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
         Button btnCancel = dialog.findViewById(R.id.btnCancelDelete);
 
         btnDelete.setOnClickListener(v -> {
-            for (int i = 0; i < HomeActivity.communityProjects.size(); i++) {
-                if (HomeActivity.communityProjects.get(i).getId() == project.getId()) {
-                    HomeActivity.communityProjects.remove(i);
-                    break;
+            String backendId = project.getBackendId();
+            if (backendId == null || backendId.trim().isEmpty()) {
+                showInfoSnackbar(view, "This project is not linked to backend yet");
+                dialog.dismiss();
+                return;
+            }
+
+            apiService.deleteProject(backendId).enqueue(new Callback<ActionResponse>() {
+                @Override
+                public void onResponse(Call<ActionResponse> call, Response<ActionResponse> response) {
+                    if (!response.isSuccessful()) {
+                        showInfoSnackbar(view, "Delete failed (" + response.code() + ")");
+                        return;
+                    }
+
+                    for (int i = 0; i < HomeActivity.communityProjects.size(); i++) {
+                        if (HomeActivity.communityProjects.get(i).getId() == project.getId()) {
+                            HomeActivity.communityProjects.remove(i);
+                            break;
+                        }
+                    }
+                    projects.remove(position);
+                    notifyItemRemoved(position);
+                    notifyItemRangeChanged(position, projects.size());
+                    if (deleteListener != null) {
+                        deleteListener.onProjectDeleted();
+                    }
+                    showInfoSnackbar(view, "Project deleted permanently");
+                    dialog.dismiss();
                 }
-            }
-            projects.remove(position);
-            notifyItemRemoved(position);
-            notifyItemRangeChanged(position, projects.size());
-            if (deleteListener != null) {
-                deleteListener.onProjectDeleted();
-            }
-            showInfoSnackbar(view, "Project deleted permanently");
-            dialog.dismiss();
+
+                @Override
+                public void onFailure(Call<ActionResponse> call, Throwable t) {
+                    showInfoSnackbar(view, "Could not reach backend");
+                }
+            });
         });
 
         btnCancel.setOnClickListener(v -> dialog.dismiss());
@@ -331,7 +431,8 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
 
     public static class ProjectViewHolder extends RecyclerView.ViewHolder {
         TextView tvTitle, tvStatus;
-        MaterialCardView statusCard, optionsCard;
+        MaterialCardView statusCard, optionsCard, authorContainer;
+        ImageView ivProjectImage;
 
         public ProjectViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -339,6 +440,8 @@ public class ProjectAdapter extends RecyclerView.Adapter<ProjectAdapter.ProjectV
             tvStatus = itemView.findViewById(R.id.tvStatus);
             statusCard = itemView.findViewById(R.id.statusBadge);
             optionsCard = itemView.findViewById(R.id.ivOptionsCard);
+            authorContainer = itemView.findViewById(R.id.authorContainer);
+            ivProjectImage = itemView.findViewById(R.id.ivProjectImage);
         }
     }
 }

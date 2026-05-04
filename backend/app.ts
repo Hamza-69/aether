@@ -4,8 +4,9 @@ import { inngest } from "./ai/inngest/client"
 import cors from "cors"
 import morgan from "morgan"
 import { projectsRouter } from "./controllers/projects"
-import { messagesRouter } from "./controllers/messages"
 import { authRouter } from "./controllers/auth"
+import { userSecretsRouter } from "./controllers/userSecrets"
+import { discoverRouter } from "./controllers/discover"
 import { codeAgentFunction } from "./ai/inngest/jobs/agent"
 import { previewProjectFunction } from "./ai/inngest/jobs/preview"
 import { deployProjectFunction } from "./ai/inngest/jobs/deploy"
@@ -13,6 +14,8 @@ import { generateKeystoreFunction } from "./ai/inngest/jobs/generate-keystore"
 import { exportApkFunction } from "./ai/inngest/jobs/export-apk"
 import { apiReference } from "@scalar/express-api-reference"
 import { openApiSpec } from "./openapi-registry"
+import { requireAuth } from "./lib/auth"
+import { realtimeRouter } from "./controllers/realtime"
 
 const app = express()
 
@@ -23,7 +26,7 @@ morgan.token("body", (req: express.Request) => {
   return JSON.stringify(req.body)
 })
 
-app.use(morgan(":method :url :status :res[content-length] :response-time ms :body"))
+app.use(morgan(":method :url :status :res[content-length] :response-time ms"))
 
 app.get("/openapi.json", (_req, res) => {
   res.json(openApiSpec)
@@ -51,15 +54,22 @@ app.use(
   }),
 )
 
+// Public routes
 app.use("/api/auth", authRouter)
-app.use("/api/projects", projectsRouter)
-app.use("/api/messages", messagesRouter)
+
+// Protected routes — requireAuth runs before any handler in these routers
+app.use("/api/secrets", requireAuth, userSecretsRouter)
+app.use("/api/projects", requireAuth, projectsRouter)
+app.use("/api/realtime", requireAuth, realtimeRouter)
+app.use("/api/discover", requireAuth, discoverRouter)
 
 console.log("[app] Registered routes:")
 console.log("  - /api/inngest")
 console.log("  - /api/auth")
 console.log("  - /api/projects")
-console.log("  - /api/messages")
+console.log("  - /api/projects/:projectId/messages")
+console.log("  - /api/realtime")
+console.log("  - /api/discover")
 console.log("  - /api/docs (API docs)")
 console.log("  - /openapi.json")
 

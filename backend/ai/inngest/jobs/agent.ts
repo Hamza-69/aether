@@ -4,23 +4,77 @@ import { inngest } from "../client"
 import { getSandbox } from "../../../lib/utils"
 import { FRAGMENT_TITLE_PROMPT } from "../prompts"
 import { prisma } from "../../../lib/prisma"
-import { codeAgent } from "../agents/agent"
-import { AgentState } from "../agents/agent"
+import { codeAgent } from "../agent/agent"
+import { AgentState } from "../agent/agent"
 import {
   uploadState,
   getStateDownloadUrl,
   ZERO_STATE_FRONTEND_KEY,
   ZERO_STATE_BACKEND_KEY,
 } from "../../../lib/storage"
-import { resolveBackendSecretsFromExample, stringifyEnv } from "../../../lib/projectSecrets"
+import {
+  resolveBackendSecretsFromExample,
+  stringifyEnv,
+  updateRequiredBackendSecretsFromExample,
+} from "../../../lib/projectSecrets"
+import { publish  as publishFunction } from "../../../lib/utils"
+import { captureProjectScreenshot } from "../../../lib/screenshot"
 
 export const codeAgentFunction = inngest.createFunction(
   {id: "code-agent"},
   { event: "code-agent/run" },
-  async ({ event, step }) => {
+  async ({ event, step, publish }: { event: any, step: any, publish: Function }) => {
+
+    // Resolve the project owner so channels are scoped per user
+    const project = await step.run("resolve-project-owner", async () => {
+      return prisma.project.findUniqueOrThrow({
+        where: { id: event.data.projectId },
+        select: { userId: true },
+      })
+    })
+    const userId = project.userId
+
+    const { messageId, streamId } = await step.run("create-initial-message", async () => {
+      const created = await prisma.message.create({
+        data: {
+          projectId: event.data.projectId,
+          content: "",
+          role: "ASSISTANT",
+          type: "SUCCESS",
+        },
+      })
+
+      const stream = await prisma.stream.create({
+        data: {
+          messageId: created.id,
+        },
+      })
+
+      const agentMessage = await prisma.message.findUnique({
+        where: { id: created.id },
+        include: { stream: true },
+      })
+
+      await publishFunction(
+        publish,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
+        "ai",
+        agentMessage as any,
+        stream.id,
+      )
+
+      return { messageId: created.id, streamId: stream.id }
+    })
 
     // Find the latest fragment with tar keys from a previous agent run on this project
     const latestFragment = await step.run("get-latest-fragment", async () => {
+      await publishFunction(
+        publish,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
+        "ai",
+        { message: "Let me start by getting the state of the previous code..." },
+        streamId,
+      )
       const latestMessage = await prisma.message.findFirst({
         where: {
           projectId: event.data.projectId,
@@ -29,6 +83,7 @@ export const codeAgentFunction = inngest.createFunction(
             frontendTarKey: { not: null },
             backendTarKey: { not: null },
           },
+          completed: true,
         },
         orderBy: { createdAt: "desc" },
         include: { fragment: true },
@@ -37,12 +92,26 @@ export const codeAgentFunction = inngest.createFunction(
     })
 
     const SandboxId = await step.run("get-sandbox-id", async () => {
+      await publishFunction(
+        publish,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
+        "ai",
+        { message: "Starting up a sandbox for you to run the code..." },
+        streamId,
+      )
       const sandbox = await Sandbox.create("coding-preview")
       await sandbox.setTimeout(60_000 * 10 * 3) // 30 mins
       return sandbox.sandboxId
     })
 
     await step.run("setup-or-restore-sandbox", async () => {
+      await publishFunction(
+        publish,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
+        "ai",
+        { message: "Let me now restore the state of the code..." },
+        streamId,
+      )
       const sandbox = await getSandbox(SandboxId)
 
       const frontendKey = latestFragment?.frontendTarKey ?? ZERO_STATE_FRONTEND_KEY
@@ -72,7 +141,16 @@ export const codeAgentFunction = inngest.createFunction(
       summary: "",
       error: "",
       SandboxId,
-    })
+      publishCallback: publish,
+      messageId,
+      streamId,
+      projectId: event.data.projectId,
+      userId,
+    },
+    {
+      threadId: event.data.projectId
+    }
+  )
 
     const network = createNetwork<AgentState>({
       name: "coding-agent-network",
@@ -88,6 +166,18 @@ export const codeAgentFunction = inngest.createFunction(
     })
 
     const result = await network.run(event.data.value, { state })
+
+    await step.run("update-required-backend-secrets", async () => {
+      await publishFunction(
+        publish,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
+        "ai",
+        { message: "Checking which backend environment secrets this project needs..." },
+        streamId,
+      )
+      const sandbox = await getSandbox(SandboxId)
+      await updateRequiredBackendSecretsFromExample(sandbox, event.data.projectId)
+    })
 
     const fragmentTitleGenerator = createAgent({
       name: "fragment-title-generator",
@@ -117,6 +207,13 @@ export const codeAgentFunction = inngest.createFunction(
 
     // Always tar and upload both dirs, whether the run succeeded or errored
     const fragmentId = await step.run("tar-and-upload", async () => {
+      await publishFunction(
+        publish,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
+        "ai",
+        { message: "Saving the new state of the code..." },
+        streamId,
+      )
       const sandbox = await getSandbox(SandboxId)
 
       const tarFrontend = await sandbox.commands.run(
@@ -150,15 +247,30 @@ export const codeAgentFunction = inngest.createFunction(
         uploadState(`workspaces/${fragment.id}_backend.tar.gz`, backendBuffer),
       ])
 
-      await prisma.fragment.update({
+      const updatedFragment = await prisma.fragment.update({
         where: { id: fragment.id },
         data: { frontendTarKey: frontendKey, backendTarKey: backendKey },
       })
+
+      await publishFunction(
+        publish,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
+        "ai",
+        { fragment: updatedFragment as any },
+        streamId,
+      )
 
       return fragment.id
     })
 
     const sandboxUrl = await step.run("run-project-and-get-sandbox-url", async () => {
+      await publishFunction(
+        publish,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
+        "ai",
+        { message: "Booting up a preview..." },
+        streamId,
+      )
       const sandbox = await getSandbox(SandboxId)
       const frontendUrl = `https://${sandbox.getHost(8081)}`
       const backendUrl = `https://${sandbox.getHost(3000)}`
@@ -189,23 +301,59 @@ export const codeAgentFunction = inngest.createFunction(
       await prisma.project.update({
         where: { id: event.data.projectId },
         data: {
-          previewUrl: sandboxUrl,
           previewStatus: "RUNNING",
           previewStartedAt: new Date(),
         },
       })
+
+      const preview = await prisma.preview.create({
+        data: {
+          projectId: event.data.projectId,
+          url: sandboxUrl,
+          completed: true,
+        },
+      })
+
+      await publishFunction(
+        publish,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
+        "ai",
+        { preview: preview as any, previewStatus: "RUNNING" },
+        streamId,
+      )
+    })
+
+    await step.run("capture-screenshot", async () => {
+      await captureProjectScreenshot(
+        event.data.projectId,
+        SandboxId,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
+        streamId,
+        publish,
+      )
     })
 
     await step.run("save-result", async () => {
-      return await prisma.message.create({
+      const finalMessage = await prisma.message.update({
+        where: { id: messageId },
         data: {
-          projectId: event.data.projectId,
           content: generateResponse(),
-          role: "ASSISTANT",
           type: isError ? "ERROR" : "SUCCESS",
           fragmentId,
+          completed: true,
         },
+        include: { fragment: true, stream: true },
       })
+
+      await publishFunction(
+        publish,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
+        "ai",
+        { message: finalMessage as any, done: true },
+        streamId,
+      )
+
+      return finalMessage
     })
 
     return {

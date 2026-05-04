@@ -38,15 +38,54 @@
         app:layout_constraintStart_toEndOf="@id/aiIconCard"
         app:layout_constraintTop_toTopOf="parent">
 
-        <TextView
-            android:id="@+id/tvAiMessage"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:padding="16dp"
-            android:text="I'll create a fitness tracking app for you! It will include:\n\n• Workout logging\n• Progress charts\n• Personal records"
-            android:textColor="@color/text_main"
-            android:textSize="14sp"
-            android:lineSpacingExtra="4dp" />
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:id="@+id/thinkingContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/thinking_background"
+                android:clickable="true"
+                android:focusable="true"
+                android:orientation="vertical"
+                android:padding="12dp"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <TextView
+                    android:id="@+id/tvThinkingToggle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="Thinking v"
+                    android:textColor="@color/accent_purple"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/tvThinkingChunks"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="@color/text_sub"
+                    android:textSize="12sp"
+                    tools:text="Starting up a sandbox...\ngrep: Looking for navigation files..." />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvAiMessage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="I'll create a fitness tracking app for you! It will include:\n\n• Workout logging\n• Progress charts\n• Personal records"
+                android:textColor="@color/text_main"
+                android:textSize="14sp"
+                android:lineSpacingExtra="4dp" />
+        </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

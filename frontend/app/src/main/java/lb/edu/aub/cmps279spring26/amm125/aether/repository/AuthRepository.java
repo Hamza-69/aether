@@ -19,7 +19,7 @@ public class AuthRepository {
         apiService = ApiClient.getApiService();
     }
 
-    public Call<VerificationStartResponse> signin(String email, String password) {
+    public Call<AuthResponse> signin(String email, String password) {
         LoginRequest loginRequest = new LoginRequest(email, password);
         return apiService.signin(loginRequest);
     }

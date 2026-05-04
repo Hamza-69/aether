@@ -29,3 +29,65 @@ export async function getStateDownloadUrl(key: string, expiresIn = 300) {
   })
   return getSignedUrl(tigris, command, { expiresIn })
 }
+
+/**
+ * Upload a user profile picture to S3.
+ * Accepts a base64-encoded image and its MIME type.
+ * Returns the S3 key under which the image is stored.
+ */
+export async function uploadProfilePicture(
+  userId: string,
+  base64Data: string,
+  mimeType: string,
+): Promise<string> {
+  const ext = mimeType.split("/")[1] || "png"
+  const key = `profile-pictures/${userId}.${ext}`
+  const buffer = Buffer.from(base64Data, "base64")
+
+  await tigris.send(
+    new PutObjectCommand({
+      Bucket: process.env.BUCKET_NAME!,
+      Key: key,
+      Body: buffer,
+      ContentType: mimeType,
+    }),
+  )
+
+  return key
+}
+
+/**
+ * Get a presigned URL for a profile picture.
+ * Defaults to a 1-hour expiry.
+ */
+export async function getProfilePictureUrl(key: string, expiresIn = 3600) {
+  const command = new GetObjectCommand({
+    Bucket: process.env.BUCKET_NAME!,
+    Key: key,
+  })
+  return getSignedUrl(tigris, command, { expiresIn })
+}
+
+/**
+ * Upload a project screenshot with public-read ACL.
+ * Returns a permanent public URL (no presigning needed).
+ */
+export async function uploadScreenshot(
+  projectId: string,
+  pngBuffer: Buffer | Uint8Array,
+): Promise<string> {
+  const key = `screenshots/${projectId}/${Date.now()}.png`
+
+  await tigris.send(
+    new PutObjectCommand({
+      Bucket: process.env.BUCKET_NAME!,
+      Key: key,
+      Body: pngBuffer,
+      ContentType: "image/png",
+      ACL: "public-read",
+    }),
+  )
+
+  // Permanent public URL via Tigris CDN
+  return `https://${process.env.BUCKET_NAME!}.fly.storage.tigris.dev/${key}`
+}
