@@ -2,7 +2,6 @@ import { inngest } from "../client"
 import { prisma } from "../../../lib/prisma"
 import { getSandbox, publish as publishFunction } from "../../../lib/utils"
 import { getStateDownloadUrl } from "../../../lib/storage"
-import { captureProjectScreenshot } from "../../../lib/screenshot"
 import { resolveBackendSecretsFromExample, stringifyEnv } from "../../../lib/projectSecrets"
 
 export const previewProjectFunction = inngest.createFunction(
@@ -211,16 +210,6 @@ export const previewProjectFunction = inngest.createFunction(
         "preview",
         { preview: finalPreview as any, done: true },
         streamId,
-      )
-    })
-
-    await step.run("capture-screenshot", async () => {
-      await captureProjectScreenshot(
-        projectId,
-        sandboxId,
-        channel,
-        streamId,
-        publish,
       )
     })
 

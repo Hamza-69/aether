@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -42,12 +44,15 @@ import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
 
 import lb.edu.aub.cmps279spring26.amm125.aether.api.ApiClient;
@@ -84,6 +89,16 @@ public class ChatActivity extends AppCompatActivity {
     private static final String CONNECTION_REFUSED_MSG = "connection refused on port";
     private static final String E2B_SANDBOX_HEADER = "x-e2b-sandbox-id";
     private static final long PREVIEW_STALE_THRESHOLD_MS = 20L * 60L * 1000L;
+    private static final int PREVIEW_POST_MAX_RETRIES = 5;
+    private static final long PREVIEW_POST_INITIAL_BACKOFF_MS = 1000L;
+    private static final long PREVIEW_REQUEST_CLOCK_SKEW_MS = 3000L;
+    private static final Set<String> SUPPRESSED_MISSING_REQUIRED_SECRETS =
+            Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+                    "CORS_ALLOWED_ORIGINS",
+                    "DATABASE_URL",
+                    "PORT",
+                    "PREVIEW_CORS_ORIGIN"
+            )));
 
     private RecyclerView rvChat;
     private ChatAdapter adapter;
@@ -113,13 +128,19 @@ public class ChatActivity extends AppCompatActivity {
     private boolean previewRecoveryInProgress = false;
     private boolean previewStarting = false;
     private boolean previewStatusMode = false;
+    private boolean previewMarkedRunning = false;
+    private boolean previewValidationInFlight = false;
     private String renderedPreviewUrl;
     private String lastPreviewStatusLine = "";
     private final StringBuilder previewStatusSteps = new StringBuilder();
+    private final Set<String> previewStatusSeenLines = new HashSet<>();
+    private long activePreviewRequestStartedAtMs = 0L;
     private String activeAgentMessageId;
     private final ApiService apiService = ApiClient.getApiService();
     private final Map<String, RealtimeClient> realtimeClients = new HashMap<>();
     private final OkHttpClient previewHealthClient = new OkHttpClient.Builder().build();
+    private final Handler previewRetryHandler = new Handler(Looper.getMainLooper());
+    private Runnable pendingPreviewRefetch;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -187,7 +208,7 @@ public class ChatActivity extends AppCompatActivity {
                         setPreviewLoading(true, "Preview is starting...");
                         return;
                     }
-                    markInvalidPreview("Preview is currently unavailable");
+                    maybeRefetchPreviewAfterE2bError("Preview is still starting...");
                 }
             }
 
@@ -200,7 +221,7 @@ public class ChatActivity extends AppCompatActivity {
                     setPreviewLoading(true, "Waiting for preview...");
                     return;
                 }
-                markInvalidPreview("Preview failed to load");
+                maybeRefetchPreviewAfterE2bError("Preview is still starting...");
             }
 
             @Override
@@ -240,6 +261,7 @@ public class ChatActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        cancelPendingPreviewRefetch();
         for (RealtimeClient client : realtimeClients.values()) {
             client.disconnect();
         }
@@ -298,28 +320,23 @@ public class ChatActivity extends AppCompatActivity {
 
         if (STREAM_PREVIEW.equals(streamType)) {
             String statusMessage = extractRealtimeMessage(payload);
-            if (!TextUtils.isEmpty(statusMessage)) {
-                appendPreviewStatusStep(statusMessage);
-            }
-
             boolean previewCompleted = false;
             boolean previewRunning = false;
             String topLevelUrl = payload.optString("url", "");
             if (!TextUtils.isEmpty(topLevelUrl)) {
                 previewStarting = payload.optBoolean("starting", true);
                 setCurrentPreviewUrl(topLevelUrl);
-                appendPreviewStatusStep("Preview URL received");
             }
 
             JSONObject preview = payload.optJSONObject("preview");
             if (preview != null) {
                 String previewUrl = preview.optString("url", "");
                 String previewMessage = preview.optString("message", "");
-                if (!TextUtils.isEmpty(previewMessage)) {
-                    appendPreviewStatusStep(previewMessage);
-                }
                 String previewStatus = preview.optString("status", "");
-                if (!TextUtils.isEmpty(previewStatus)) {
+                String liveMessage = !TextUtils.isEmpty(previewMessage) ? previewMessage : statusMessage;
+                if (!TextUtils.isEmpty(liveMessage)) {
+                    appendPreviewStatusStep(liveMessage);
+                } else if (!TextUtils.isEmpty(previewStatus)) {
                     appendPreviewStatusStep("Status: " + previewStatus);
                 }
                 if (!TextUtils.isEmpty(previewUrl)) {
@@ -330,14 +347,16 @@ public class ChatActivity extends AppCompatActivity {
                     previewStarting = !(completed || running);
                     setCurrentPreviewUrl(previewUrl);
                     if (completed || running) {
-                        showPreviewStatusReady(previewUrl);
+                        confirmPreviewReady(previewUrl);
                     }
                     if (completed) {
                         previewRecoveryInProgress = false;
                     }
                 }
+            } else if (!TextUtils.isEmpty(statusMessage)) {
+                appendPreviewStatusStep(statusMessage);
             }
-            if (done || previewCompleted || previewRunning) {
+            if (done && !previewStatusMode && !previewStarting && !previewRecoveryInProgress) {
                 stopRealtimeForType(STREAM_PREVIEW);
             }
         }
@@ -808,9 +827,14 @@ public class ChatActivity extends AppCompatActivity {
                 if (requiredSecrets != null && !requiredSecrets.isEmpty()) {
                     sb.append("Required backend secrets:\n");
                     for (RequiredSecretSummary secret : requiredSecrets) {
-                        sb.append(Boolean.TRUE.equals(secret.getIsSet()) ? "[set] " : "[missing] ");
-                        sb.append(secret.getName());
-                        if (Boolean.TRUE.equals(secret.getIsSet())) {
+                        boolean isSet = Boolean.TRUE.equals(secret.getIsSet());
+                        String secretName = secret.getName();
+                        if (!isSet && shouldSuppressMissingRequiredSecret(secretName)) {
+                            continue;
+                        }
+                        sb.append(isSet ? "[set] " : "[missing] ");
+                        sb.append(secretName);
+                        if (isSet) {
                             sb.append(" (set");
                             if (Boolean.TRUE.equals(secret.getUseUserSecret())) {
                                 sb.append(", uses account secret");
@@ -845,6 +869,13 @@ public class ChatActivity extends AppCompatActivity {
                 target.setText("Could not reach backend.");
             }
         });
+    }
+
+    private boolean shouldSuppressMissingRequiredSecret(String secretName) {
+        if (secretName == null) {
+            return false;
+        }
+        return SUPPRESSED_MISSING_REQUIRED_SECRETS.contains(secretName.trim().toUpperCase(Locale.US));
     }
 
     private int dp(int value) {
@@ -882,20 +913,20 @@ public class ChatActivity extends AppCompatActivity {
                 ActionResponse body = response.body();
                 String previewUrl = body != null ? body.getUrl() : null;
                 boolean alreadyRunning = body != null && Boolean.TRUE.equals(body.getAlreadyRunning());
-                boolean scheduled = body != null && Boolean.TRUE.equals(body.getScheduled());
                 if (!TextUtils.isEmpty(previewUrl)) {
                     setCurrentPreviewUrl(previewUrl);
-                    appendPreviewStatusStep(alreadyRunning
-                            ? "Preview already running"
-                            : "Preview job accepted by backend");
                     if (alreadyRunning) {
-                        stopRealtimeForType(STREAM_PREVIEW);
-                        showPreviewStatusReady(previewUrl);
-                    } else if (scheduled) {
-                        appendPreviewStatusStep("Waiting for realtime updates...");
+                        checkPreviewHealth(null, previewUrl, runningNow -> {
+                            if (runningNow) {
+                                showPreviewStatusReady(previewUrl);
+                                return;
+                            }
+                            previewRecoveryInProgress = false;
+                            previewStarting = true;
+                            cancelPendingPreviewRefetch();
+                            schedulePreviewRefetchAttempt(0, "Preview is still starting...");
+                        });
                     }
-                } else {
-                    appendPreviewStatusStep(scheduled ? "Preview job accepted" : "Waiting for realtime updates...");
                 }
             }
 
@@ -1105,11 +1136,16 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void startPreviewStatus(String title) {
+        cancelPendingPreviewRefetch();
+        previewValidationInFlight = false;
+        activePreviewRequestStartedAtMs = System.currentTimeMillis();
         previewStatusMode = true;
         previewStarting = true;
+        previewMarkedRunning = false;
         previewErrorShown = false;
         renderedPreviewUrl = null;
         previewStatusSteps.setLength(0);
+        previewStatusSeenLines.clear();
         lastPreviewStatusLine = "";
         setPreviewStatusModeUI(true);
         if (tvPreviewStatusTitle != null) {
@@ -1123,7 +1159,6 @@ public class ChatActivity extends AppCompatActivity {
             tvPreviewStatusUrl.setText("");
         }
         appendPreviewStatusStep(title);
-        appendPreviewStatusStep("Subscribing to realtime preview updates...");
         if (previewContainer.getVisibility() == View.VISIBLE) {
             webPreview.stopLoading();
             webPreview.loadUrl("about:blank");
@@ -1134,8 +1169,9 @@ public class ChatActivity extends AppCompatActivity {
     private void appendPreviewStatusStep(String line) {
         if (TextUtils.isEmpty(line)) return;
         String trimmed = line.trim();
-        if (trimmed.isEmpty() || trimmed.equals(lastPreviewStatusLine)) return;
+        if (trimmed.isEmpty() || trimmed.equals(lastPreviewStatusLine) || previewStatusSeenLines.contains(trimmed)) return;
         lastPreviewStatusLine = trimmed;
+        previewStatusSeenLines.add(trimmed);
         if (previewStatusSteps.length() > 0) {
             previewStatusSteps.append('\n');
         }
@@ -1146,15 +1182,19 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void showPreviewStatusReady(String rawUrl) {
+        cancelPendingPreviewRefetch();
+        previewValidationInFlight = false;
+        activePreviewRequestStartedAtMs = 0L;
         previewStatusMode = false;
         previewStarting = false;
         previewRecoveryInProgress = false;
+        previewMarkedRunning = true;
         previewErrorShown = false;
         String normalizedUrl = normalizeUrl(rawUrl);
-        appendPreviewStatusStep("Preview marked RUNNING");
         setPreviewStatusModeUI(false);
         currentPreviewUrl = normalizedUrl;
         loadPreviewUrl(normalizedUrl, false);
+        stopRealtimeForType(STREAM_PREVIEW);
     }
 
     private void setPreviewStatusModeUI(boolean statusModeVisible) {
@@ -1180,14 +1220,21 @@ public class ChatActivity extends AppCompatActivity {
                             setPreviewLoading(true, "Preview is starting...");
                             return;
                         }
-                        markInvalidPreview(lower.contains(SANDBOX_NOT_FOUND_MSG)
-                                ? "Preview sandbox is no longer available"
+                        String errorMessage = lower.contains(SANDBOX_NOT_FOUND_MSG)
+                                ? "Preview sandbox is restarting..."
                                 : closedPort
                                 ? "Preview server is not listening yet"
-                                : "Preview is currently unavailable");
+                                : "Preview is still starting...";
+                        if (pendingPreviewRefetch != null) {
+                            setPreviewLoading(true, "Waiting for preview to post...");
+                            return;
+                        }
+                        maybeRefetchPreviewAfterE2bError(errorMessage);
                     } else {
                         previewStarting = false;
                         previewRecoveryInProgress = false;
+                        previewMarkedRunning = true;
+                        cancelPendingPreviewRefetch();
                         setPreviewLoading(false, null);
                     }
                 }
@@ -1195,16 +1242,25 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void markInvalidPreview(String message) {
+        cancelPendingPreviewRefetch();
+        previewValidationInFlight = false;
         if (previewErrorShown) return;
         previewErrorShown = true;
         previewStarting = false;
         previewRecoveryInProgress = false;
+        previewMarkedRunning = false;
         currentPreviewUrl = null;
-        tvPreviewHint.setText(message);
-        setPreviewLoading(true, message);
-        webPreview.stopLoading();
-        webPreview.loadUrl("about:blank");
-        showInfoSnackbar(message);
+        renderedPreviewUrl = null;
+        previewStatusMode = true;
+        setPreviewStatusModeUI(true);
+        if (tvPreviewStatusTitle != null) {
+            tvPreviewStatusTitle.setText("Preparing preview");
+        }
+        appendPreviewStatusStep(message);
+        setPreviewLoading(false, null);
+        if (!TextUtils.isEmpty(projectId)) {
+            connectRealtimeForType(STREAM_PREVIEW, true);
+        }
     }
 
     private interface PreviewHealthListener {
@@ -1238,6 +1294,17 @@ public class ChatActivity extends AppCompatActivity {
         return -1L;
     }
 
+    private boolean isProjectPreviewFreshForCurrentRequest(BackendProject project) {
+        if (activePreviewRequestStartedAtMs <= 0L || project == null) {
+            return true;
+        }
+        long startedAtMs = parseIsoUtcMillis(project.getPreviewStartedAt());
+        if (startedAtMs <= 0L) {
+            return false;
+        }
+        return startedAtMs + PREVIEW_REQUEST_CLOCK_SKEW_MS >= activePreviewRequestStartedAtMs;
+    }
+
     private void verifyRunningPreview(BackendProject project, String rawUrl) {
         checkPreviewHealth(project, rawUrl, running -> {
             if (running) {
@@ -1246,8 +1313,127 @@ public class ChatActivity extends AppCompatActivity {
                 loadPreviewUrl(rawUrl, false);
                 return;
             }
-            triggerPreviewAction("Preview is unavailable. Restarting...", apiService.restartPreview(projectId));
+            triggerPreviewAction("Preview needs a restart", apiService.restartPreview(projectId));
         });
+    }
+
+    private void confirmPreviewReady(String fallbackUrl) {
+        if (previewValidationInFlight) {
+            return;
+        }
+        if (TextUtils.isEmpty(projectId)) {
+            showPreviewStatusReady(fallbackUrl);
+            return;
+        }
+
+        previewValidationInFlight = true;
+        apiService.getProject(projectId).enqueue(new Callback<ProjectWrapperResponse>() {
+            @Override
+            public void onResponse(Call<ProjectWrapperResponse> call, Response<ProjectWrapperResponse> response) {
+                previewValidationInFlight = false;
+                if (!response.isSuccessful() || response.body() == null) {
+                    schedulePreviewRefetchAttempt(0, "Preview is still starting...");
+                    return;
+                }
+                BackendProject project = response.body().getProject();
+                if (!isProjectPreviewFreshForCurrentRequest(project)) {
+                    schedulePreviewRefetchAttempt(0, "Preview is still starting...");
+                    return;
+                }
+                String backendUrl = project != null ? project.getPreviewUrl() : null;
+                String candidateUrl = TextUtils.isEmpty(backendUrl) ? fallbackUrl : backendUrl;
+                if (TextUtils.isEmpty(candidateUrl)) {
+                    schedulePreviewRefetchAttempt(0, "Preview is still starting...");
+                    return;
+                }
+                setCurrentPreviewUrl(candidateUrl);
+                checkPreviewHealth(project, candidateUrl, running -> {
+                    if (running) {
+                        showPreviewStatusReady(candidateUrl);
+                        return;
+                    }
+                    schedulePreviewRefetchAttempt(0, "Preview is still starting...");
+                });
+            }
+
+            @Override
+            public void onFailure(Call<ProjectWrapperResponse> call, Throwable t) {
+                previewValidationInFlight = false;
+                schedulePreviewRefetchAttempt(0, "Preview is still starting...");
+            }
+        });
+    }
+
+    private void maybeRefetchPreviewAfterE2bError(String finalErrorMessage) {
+        if (TextUtils.isEmpty(projectId)) {
+            setPreviewLoading(true, "Waiting for preview...");
+            return;
+        }
+        if (previewStarting || previewRecoveryInProgress) {
+            setPreviewLoading(true, "Waiting for preview...");
+            return;
+        }
+        setPreviewLoading(true, "Waiting for preview to post...");
+        schedulePreviewRefetchAttempt(0, finalErrorMessage);
+    }
+
+    private void schedulePreviewRefetchAttempt(int attempt, String finalErrorMessage) {
+        if (attempt >= PREVIEW_POST_MAX_RETRIES) {
+            markInvalidPreview("Preview is still starting. Tap Preview to retry.");
+            return;
+        }
+
+        long delayMs = PREVIEW_POST_INITIAL_BACKOFF_MS << attempt;
+        pendingPreviewRefetch = () -> {
+            pendingPreviewRefetch = null;
+            if (isFinishing() || isDestroyed()) {
+                return;
+            }
+            apiService.getProject(projectId).enqueue(new Callback<ProjectWrapperResponse>() {
+                @Override
+                public void onResponse(Call<ProjectWrapperResponse> call, Response<ProjectWrapperResponse> response) {
+                    if (!response.isSuccessful() || response.body() == null) {
+                        schedulePreviewRefetchAttempt(attempt + 1, finalErrorMessage);
+                        return;
+                    }
+                    BackendProject project = response.body().getProject();
+                    if (!isProjectPreviewFreshForCurrentRequest(project)) {
+                        schedulePreviewRefetchAttempt(attempt + 1, finalErrorMessage);
+                        return;
+                    }
+                    String refreshedStatus = project != null ? project.getPreviewStatus() : null;
+                    String refreshedUrl = project != null ? project.getPreviewUrl() : null;
+                    if (!"RUNNING".equalsIgnoreCase(refreshedStatus) || TextUtils.isEmpty(refreshedUrl)) {
+                        schedulePreviewRefetchAttempt(attempt + 1, finalErrorMessage);
+                        return;
+                    }
+                    setCurrentPreviewUrl(refreshedUrl);
+                    checkPreviewHealth(project, refreshedUrl, running -> {
+                        if (running) {
+                            previewStarting = false;
+                            previewRecoveryInProgress = false;
+                            previewMarkedRunning = true;
+                            loadPreviewUrl(refreshedUrl, false);
+                            return;
+                        }
+                        schedulePreviewRefetchAttempt(attempt + 1, finalErrorMessage);
+                    });
+                }
+
+                @Override
+                public void onFailure(Call<ProjectWrapperResponse> call, Throwable t) {
+                    schedulePreviewRefetchAttempt(attempt + 1, finalErrorMessage);
+                }
+            });
+        };
+        previewRetryHandler.postDelayed(pendingPreviewRefetch, delayMs);
+    }
+
+    private void cancelPendingPreviewRefetch() {
+        if (pendingPreviewRefetch != null) {
+            previewRetryHandler.removeCallbacks(pendingPreviewRefetch);
+            pendingPreviewRefetch = null;
+        }
     }
 
     private void checkPreviewHealth(BackendProject project, String rawUrl, PreviewHealthListener listener) {
@@ -1320,7 +1506,6 @@ public class ChatActivity extends AppCompatActivity {
                 if (scheduled) {
                     previewStarting = true;
                     startPreviewStatus("Preview is queued");
-                    appendPreviewStatusStep("Waiting for realtime updates...");
                     if (!TextUtils.isEmpty(url)) {
                         setCurrentPreviewUrl(url);
                     }
@@ -1331,7 +1516,7 @@ public class ChatActivity extends AppCompatActivity {
 
                 if (running) {
                     if (TextUtils.isEmpty(url)) {
-                        triggerPreviewAction("Preview is unavailable. Restarting...", apiService.restartPreview(projectId));
+                        triggerPreviewAction("Preview needs a restart", apiService.restartPreview(projectId));
                         return;
                     }
                     setCurrentPreviewUrl(url);
