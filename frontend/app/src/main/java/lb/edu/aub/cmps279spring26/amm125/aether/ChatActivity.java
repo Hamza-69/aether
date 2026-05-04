@@ -1069,7 +1069,7 @@ public class ChatActivity extends AppCompatActivity {
         if (previewStatusMode) {
             setPreviewStatusModeUI(true);
             setPreviewLoading(false, null);
-            if (!TextUtils.isEmpty(projectId)) {
+            if (!TextUtils.isEmpty(projectId) && !previewRecoveryInProgress) {
                 connectRealtimeForType(STREAM_PREVIEW);
             }
             return;
@@ -1164,6 +1164,7 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void startPreviewStatus(String title) {
+        stopRealtimeForType(STREAM_PREVIEW);
         cancelPendingPreviewRefetch();
         previewValidationInFlight = false;
         activePreviewRequestStartedAtMs = System.currentTimeMillis();
