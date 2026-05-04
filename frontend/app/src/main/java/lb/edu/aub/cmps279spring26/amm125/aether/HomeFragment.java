@@ -216,6 +216,7 @@ public class HomeFragment extends Fragment {
         Chip chip1 = dialog.findViewById(R.id.chip1);
         Chip chip2 = dialog.findViewById(R.id.chip2);
         Chip chip3 = dialog.findViewById(R.id.chip3);
+        Chip chip4 = dialog.findViewById(R.id.chip4);
 
         ivClose.setOnClickListener(v -> dialog.dismiss());
         btnCancel.setOnClickListener(v -> dialog.dismiss());
@@ -237,6 +238,7 @@ public class HomeFragment extends Fragment {
         chip1.setOnClickListener(suggestionListener);
         chip2.setOnClickListener(suggestionListener);
         chip3.setOnClickListener(suggestionListener);
+        chip4.setOnClickListener(suggestionListener);
 
         btnCreate.setOnClickListener(v -> {
             String name = etName.getText().toString().trim();
@@ -308,6 +310,9 @@ public class HomeFragment extends Fragment {
         }
         if (chipId == R.id.chip3) {
             return "Design an editorial recipe studio with recipe search, ingredient filters, favorites, cooking mode step cards, shopping list generation, saved collections, and shareable recipe pages.";
+        }
+        if (chipId == R.id.chip4) {
+            return "Create a chatbot using open ai api by referring to OPENAI_API_KEY in the backend environment, and using gpt-5.5 as the ai model. Make sure to preview markdown in the chat.";
         }
         return "Design a polished mobile app with authentication, a dashboard, search, filters, CRUD flows, saved items, and responsive layouts.";
     }

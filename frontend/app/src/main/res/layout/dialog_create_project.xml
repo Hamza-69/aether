@@ -173,6 +173,13 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Editorial Recipe Studio" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chip4"
+                    style="@style/Widget.Material3.Chip.Assist"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="OpenAI GPT-5.5 Chatbot" />
             </com.google.android.material.chip.ChipGroup>
 
             <!-- Actions -->
