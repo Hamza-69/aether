@@ -41,6 +41,93 @@ const getPreviewStreamChunks = async (projectId: string, previewStartedAt: Date 
   return preview?.stream?.streamChunks.map((chunk) => chunk.data) ?? []
 }
 
+const getDeployStreamChunks = async (projectId: string, deploymentStartedAt: Date | null) => {
+  if (!deploymentStartedAt) return []
+
+  const whereClause = {
+    projectId,
+    role: "ASSISTANT" as const,
+    createdAt: { gte: deploymentStartedAt },
+    stream: { isNot: null },
+  }
+
+  const message = await prisma.message.findFirst({
+    where: whereClause,
+    orderBy: { createdAt: "desc" },
+    include: {
+      stream: {
+        include: {
+          streamChunks: {
+            orderBy: { createdAt: "asc" },
+            select: { data: true },
+          },
+        },
+      },
+    },
+  })
+
+  return message?.stream?.streamChunks.map((chunk) => chunk.data) ?? []
+}
+
+const getExportApkStreamChunks = async (projectId: string, apkStartedAt: Date | null) => {
+  if (!apkStartedAt) return []
+
+  const whereClause = {
+    projectId,
+    role: "ASSISTANT" as const,
+    createdAt: { gte: apkStartedAt },
+    stream: { isNot: null },
+  }
+
+  const message = await prisma.message.findFirst({
+    where: whereClause,
+    orderBy: { createdAt: "desc" },
+    include: {
+      stream: {
+        include: {
+          streamChunks: {
+            orderBy: { createdAt: "asc" },
+            select: { data: true },
+          },
+        },
+      },
+    },
+  })
+
+  return message?.stream?.streamChunks.map((chunk) => chunk.data) ?? []
+}
+
+const getGenerateKeystoreStreamChunks = async (projectId: string) => {
+  const keystore = await prisma.keyStore.findUnique({
+    where: { projectId },
+    include: {
+      stream: {
+        include: {
+          streamChunks: {
+            orderBy: { createdAt: "asc" },
+            select: { data: true },
+          },
+        },
+      },
+    },
+  })
+
+  return keystore?.stream?.streamChunks.map((chunk) => chunk.data) ?? []
+}
+
+const getStreamChunksForType = async (
+  type: StreamType,
+  project: Awaited<ReturnType<typeof ensureProjectOwnership>>,
+) => {
+  if (!project) return []
+
+  if (type === "preview") return getPreviewStreamChunks(project.id, project.previewStartedAt)
+  if (type === "deploy") return getDeployStreamChunks(project.id, project.deploymentStartedAt)
+  if (type === "export-apk") return getExportApkStreamChunks(project.id, project.apkStartedAt)
+  if (type === "generate-keystore") return getGenerateKeystoreStreamChunks(project.id)
+  return []
+}
+
 realtimeRouter.post("/", async (req, res): Promise<void> => {
   const { projectId, type } = req.body as { projectId?: string; type?: StreamType }
 
@@ -70,9 +157,7 @@ realtimeRouter.post("/", async (req, res): Promise<void> => {
     topics: [config.topic],
   }) as any
 
-  const streamChunks = type === "preview"
-    ? await getPreviewStreamChunks(projectId, project.previewStartedAt)
-    : []
+  const streamChunks = await getStreamChunksForType(type, project)
 
   res.status(200).json({ token, channel, topic: config.topic, streamChunks })
 })

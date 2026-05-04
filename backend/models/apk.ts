@@ -57,38 +57,33 @@ export const KeystoreSubjectSchema = z
       .trim()
       .min(1)
       .max(100)
-      .optional()
       .openapi({ example: "my-todo-app" }),
     organizationalUnit: z
       .string()
       .trim()
       .min(1)
       .max(100)
-      .optional()
       .openapi({ example: "mobile" }),
     organization: z
       .string()
       .trim()
       .min(1)
       .max(100)
-      .optional()
       .openapi({ example: "Acme Inc" }),
-    locality: z.string().trim().min(1).max(100).optional().openapi({ example: "Beirut" }),
-    state: z.string().trim().min(1).max(100).optional().openapi({ example: "Mount Lebanon" }),
+    locality: z.string().trim().min(1).max(100).openapi({ example: "Beirut" }),
+    state: z.string().trim().min(1).max(100).openapi({ example: "Mount Lebanon" }),
     countryCode: z
       .string()
       .trim()
       .regex(/^[a-zA-Z]{2}$/, "countryCode must be a 2-letter ISO code")
-      .optional()
       .openapi({ example: "LB" }),
   })
   .openapi("KeystoreSubject")
 
 export const GenerateKeystoreBodySchema = z
   .object({
-    subject: KeystoreSubjectSchema.optional().openapi({
-      description:
-        "Optional keytool distinguished-name overrides. Missing fields are derived from the project name. countryCode defaults to US.",
+    subject: KeystoreSubjectSchema.openapi({
+      description: "Required keytool distinguished-name values used to generate the keystore.",
     }),
   })
   .openapi("GenerateKeystoreBody")

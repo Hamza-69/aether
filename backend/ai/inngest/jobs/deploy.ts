@@ -117,7 +117,6 @@ export const deployProjectFunction = inngest.createFunction(
         where: { id: projectId },
         data: {
           deploymentStatus: "RUNNING",
-          deploymentStartedAt: new Date(),
         },
       })
 

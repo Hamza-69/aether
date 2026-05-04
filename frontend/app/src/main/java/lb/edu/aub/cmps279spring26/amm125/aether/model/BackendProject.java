@@ -5,6 +5,9 @@ public class BackendProject {
     private String name;
     private String screenshotUrl;
     private String previewStatus;
+    private String deploymentStatus;
+    private String keyStoreStatus;
+    private String apkStatus;
     private String previewUrl;
     private String previewStartedAt;
     private String previewSandboxId;
@@ -23,6 +26,15 @@ public class BackendProject {
 
     public String getPreviewStatus() { return previewStatus; }
     public void setPreviewStatus(String previewStatus) { this.previewStatus = previewStatus; }
+
+    public String getDeploymentStatus() { return deploymentStatus; }
+    public void setDeploymentStatus(String deploymentStatus) { this.deploymentStatus = deploymentStatus; }
+
+    public String getKeyStoreStatus() { return keyStoreStatus; }
+    public void setKeyStoreStatus(String keyStoreStatus) { this.keyStoreStatus = keyStoreStatus; }
+
+    public String getApkStatus() { return apkStatus; }
+    public void setApkStatus(String apkStatus) { this.apkStatus = apkStatus; }
 
     public String getPreviewUrl() { return previewUrl; }
     public void setPreviewUrl(String previewUrl) { this.previewUrl = previewUrl; }

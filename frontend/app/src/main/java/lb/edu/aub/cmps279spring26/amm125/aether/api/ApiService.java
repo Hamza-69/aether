@@ -2,11 +2,15 @@ package lb.edu.aub.cmps279spring26.amm125.aether.api;
 
 import lb.edu.aub.cmps279spring26.amm125.aether.model.AuthResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.ActionResponse;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.ApkDownloadUrlResponse;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.ApksResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.CreateProjectRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.CurrentUserResponse;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.DeploymentsResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.DiscoverResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.EmailRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.GenerateKeystoreRequest;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.KeystoreSummaryResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.LoginRequest;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.MessagesResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.ProfilePictureRequest;
@@ -82,11 +86,23 @@ public interface ApiService {
     @POST("projects/{projectId}/deploy")
     Call<ActionResponse> deployProject(@Path("projectId") String projectId);
 
+    @GET("projects/{projectId}/deploy")
+    Call<DeploymentsResponse> getProjectDeployments(@Path("projectId") String projectId);
+
     @POST("projects/{projectId}/keystore")
     Call<ActionResponse> generateKeystore(@Path("projectId") String projectId, @Body GenerateKeystoreRequest request);
 
+    @GET("projects/{projectId}/keystore")
+    Call<KeystoreSummaryResponse> getKeystoreSummary(@Path("projectId") String projectId);
+
     @POST("projects/{projectId}/export-apk")
     Call<ActionResponse> exportApk(@Path("projectId") String projectId);
+
+    @GET("projects/{projectId}/apks")
+    Call<ApksResponse> getProjectApks(@Path("projectId") String projectId);
+
+    @GET("projects/{projectId}/apks/{apkId}/download-url")
+    Call<ApkDownloadUrlResponse> getApkDownloadUrl(@Path("projectId") String projectId, @Path("apkId") String apkId);
 
     @POST("projects/{projectId}/preview/restart")
     Call<ActionResponse> restartPreview(@Path("projectId") String projectId);

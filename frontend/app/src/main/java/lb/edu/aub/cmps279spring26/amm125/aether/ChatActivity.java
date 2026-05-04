@@ -790,6 +790,9 @@ public class ChatActivity extends AppCompatActivity {
                                     return;
                                 }
                                 showSuccessSnackbar("Project secret saved");
+                                etName.setText("");
+                                etValue.setText("");
+                                cbUseAccountSecret.setChecked(false);
                                 loadProjectSecretsInto(tvSecrets);
                             }
 

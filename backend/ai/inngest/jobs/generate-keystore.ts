@@ -5,12 +5,12 @@ import { getSandbox, publish as publishFunction } from "../../../lib/utils"
 import { encrypt } from "../../../lib/encryption"
 
 type KeystoreSubjectOverrides = {
-  commonName?: string
-  organizationalUnit?: string
-  organization?: string
-  locality?: string
-  state?: string
-  countryCode?: string
+  commonName: string
+  organizationalUnit: string
+  organization: string
+  locality: string
+  state: string
+  countryCode: string
 }
 
 type KeystoreSubject = {
@@ -38,21 +38,28 @@ const scrub = (output: string, token: string): string => {
 
 const shellSingleQuote = (value: string): string => `'${value.replace(/'/g, "'\\''")}'`
 
-const normalizeField = (value: string | undefined, fallback: string): string => {
-  const trimmed = value?.trim()
-  return trimmed && trimmed.length > 0 ? trimmed : fallback
-}
+const resolveKeystoreSubject = (overrides: KeystoreSubjectOverrides): KeystoreSubject => {
+  const commonName = overrides.commonName.trim()
+  const organizationalUnit = overrides.organizationalUnit.trim()
+  const organization = overrides.organization.trim()
+  const locality = overrides.locality.trim()
+  const state = overrides.state.trim()
+  const countryCode = overrides.countryCode.trim().toUpperCase()
 
-const resolveKeystoreSubject = (projectName: string, overrides?: KeystoreSubjectOverrides): KeystoreSubject => {
-  const base = projectName.trim() || "aether"
-  const country = overrides?.countryCode?.trim().toUpperCase()
+  if (!commonName || !organizationalUnit || !organization || !locality || !state) {
+    throw new Error("Keystore subject fields are required")
+  }
+  if (!/^[A-Z]{2}$/.test(countryCode)) {
+    throw new Error("countryCode must be a 2-letter ISO code")
+  }
+
   return {
-    commonName: normalizeField(overrides?.commonName, base),
-    organizationalUnit: normalizeField(overrides?.organizationalUnit, base),
-    organization: normalizeField(overrides?.organization, base),
-    locality: normalizeField(overrides?.locality, base),
-    state: normalizeField(overrides?.state, base),
-    countryCode: country && /^[A-Z]{2}$/.test(country) ? country : "US",
+    commonName,
+    organizationalUnit,
+    organization,
+    locality,
+    state,
+    countryCode,
   }
 }
 
@@ -65,7 +72,7 @@ export const generateKeystoreFunction = inngest.createFunction(
   async ({ event, step, publish }: { event: any, step: any, publish: Function }) => {
     const { projectId, subjectOverrides } = event.data as {
       projectId: string
-      subjectOverrides?: KeystoreSubjectOverrides
+      subjectOverrides: KeystoreSubjectOverrides
     }
 
     // Resolve the project owner so channels are scoped per user
@@ -77,38 +84,42 @@ export const generateKeystoreFunction = inngest.createFunction(
     })
     const channel = "project_generate_keystore:" + projectOwner.userId + ":" + projectId
 
-    const { keystoreId, streamId } = await step.run("create-incomplete-keystore", async () => {
-      const keystore = await prisma.keyStore.upsert({
+    const lockedKeystore = await step.run("create-incomplete-keystore", async () => {
+      const existing = await prisma.keyStore.findUnique({
         where: { projectId },
-        create: { projectId, password: null, data: null, completed: false },
-        update: { password: null, data: null, completed: false },
+        select: { id: true, completed: true },
       })
 
-      // Stream.keystoreId is @unique, so a regenerate run must drop the
-      // previous run's stream before linking a fresh one.
+      if (existing?.completed) {
+        return { alreadyExists: true as const, keystoreId: existing.id, streamId: null as string | null }
+      }
+
+      const keystore = existing
+        ? await prisma.keyStore.update({
+            where: { id: existing.id },
+            data: { password: null, data: null, completed: false },
+          })
+        : await prisma.keyStore.create({
+            data: { projectId, password: null, data: null, completed: false },
+          })
+
       await prisma.stream.deleteMany({ where: { keystoreId: keystore.id } })
-
-      // Each generation run gets a fresh Stream; the keystore row is the
-      // stable per-project identifier, the stream is the per-run channel.
-      const stream = await prisma.stream.create({
-        data: { keystoreId: keystore.id },
-      })
+      const stream = await prisma.stream.create({ data: { keystoreId: keystore.id } })
 
       const initialKeystore = await prisma.keyStore.findUnique({
         where: { id: keystore.id },
         include: { stream: true },
       })
 
-      await publishFunction(
-        publish,
-        channel,
-        "generate-keystore",
-        initialKeystore as any,
-        stream.id,
-      )
-
-      return { keystoreId: keystore.id, streamId: stream.id }
+      await publishFunction(publish, channel, "generate-keystore", initialKeystore as any, stream.id)
+      return { alreadyExists: false as const, keystoreId: keystore.id, streamId: stream.id }
     })
+
+    if (lockedKeystore.alreadyExists) {
+      return { ok: true, alreadyExists: true }
+    }
+
+    const { keystoreId, streamId } = lockedKeystore
 
     await step.run("mark-keystore-running", async () => {
       await prisma.project.update({
@@ -121,7 +132,7 @@ export const generateKeystoreFunction = inngest.createFunction(
     })
 
     try {
-      return await runGenerateKeystorePipeline(projectId, subjectOverrides, step, publish, channel, keystoreId, streamId)
+      return await runGenerateKeystorePipeline(subjectOverrides, step, publish, channel, keystoreId, streamId)
     } finally {
       await step.run("release-keystore-lock", async () => {
         await prisma.project.update({
@@ -134,8 +145,7 @@ export const generateKeystoreFunction = inngest.createFunction(
 )
 
 const runGenerateKeystorePipeline = async (
-  projectId: string,
-  subjectOverrides: KeystoreSubjectOverrides | undefined,
+  subjectOverrides: KeystoreSubjectOverrides,
   step: Parameters<Parameters<typeof inngest.createFunction>[2]>[0]["step"],
   publish: Function,
   channel: string,
@@ -166,12 +176,7 @@ const runGenerateKeystorePipeline = async (
       streamId,
     )
     const sandbox = await getSandbox(sandboxId)
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { name: true },
-    })
-    if (!project) throw new Error("Project not found")
-    const subject = resolveKeystoreSubject(project.name, subjectOverrides)
+    const subject = resolveKeystoreSubject(subjectOverrides)
 
     let password: string
     try {

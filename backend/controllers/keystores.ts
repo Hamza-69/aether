@@ -58,13 +58,13 @@ export const generateKeystoreHandler = async (req: Request, res: Response) => {
         id: true,
         keyStoreStatus: true,
         keyStoreStartedAt: true,
-        keyStore: { select: { id: true } },
+        keyStore: { select: { id: true, completed: true } },
       },
     })
 
     // Idempotency: short-circuit if the keystore already exists. Regenerating
     // would orphan any already-signed APKs — never overwrite silently.
-    if (projectWithKeyStore?.keyStore) {
+    if (projectWithKeyStore?.keyStore?.completed) {
       res.status(200).json({
         scheduled: false,
         alreadyExists: true,
@@ -79,7 +79,7 @@ export const generateKeystoreHandler = async (req: Request, res: Response) => {
     const claimed = await prisma.project.updateMany({
       where: {
         id: projectId,
-        keyStore: { is: null },
+        NOT: { keyStore: { is: { completed: true } } },
         OR: [
           { keyStoreStatus: "IDLE" },
           { keyStoreStartedAt: { lt: staleCutoff } },

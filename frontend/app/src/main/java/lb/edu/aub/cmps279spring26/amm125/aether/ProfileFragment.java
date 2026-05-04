@@ -345,6 +345,8 @@ public class ProfileFragment extends Fragment {
                                     return;
                                 }
                                 Toast.makeText(requireContext(), "Secret saved", Toast.LENGTH_SHORT).show();
+                                etName.setText("");
+                                etValue.setText("");
                                 loadAccountSecretsInto(tvSecrets);
                             }
 

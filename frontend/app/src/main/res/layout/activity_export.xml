@@ -138,6 +138,31 @@
                         android:text="Ready"
                         android:textColor="@color/text_sub"
                         android:textSize="13sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnToggleDeployProgress"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minHeight="0dp"
+                        android:text="Show progress"
+                        android:textAllCaps="false" />
+
+                    <TextView
+                        android:id="@+id/tvDeployProgressLog"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:background="#F1F3F4"
+                        android:padding="10dp"
+                        android:text="No updates yet."
+                        android:textColor="@color/text_sub"
+                        android:textSize="12sp"
+                        android:typeface="monospace"
+                        android:visibility="gone" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -169,7 +194,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
-                        android:text="Create or refresh the Android signing keystore required before APK export."
+                        android:text="Create the Android signing keystore required before APK export."
                         android:textColor="@color/text_sub"
                         android:textSize="14sp" />
 
@@ -209,6 +234,31 @@
                         android:text="Ready"
                         android:textColor="@color/text_sub"
                         android:textSize="13sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnToggleKeystoreProgress"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minHeight="0dp"
+                        android:text="Show progress"
+                        android:textAllCaps="false" />
+
+                    <TextView
+                        android:id="@+id/tvKeystoreProgressLog"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:background="#F1F3F4"
+                        android:padding="10dp"
+                        android:text="No updates yet."
+                        android:textColor="@color/text_sub"
+                        android:textSize="12sp"
+                        android:typeface="monospace"
+                        android:visibility="gone" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -281,6 +331,42 @@
                         android:text="Ready"
                         android:textColor="@color/text_sub"
                         android:textSize="13sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnInstallLatestApk"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="12dp"
+                        android:text="Install Latest APK"
+                        android:textAllCaps="false"
+                        android:visibility="gone"
+                        app:cornerRadius="12dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnToggleApkProgress"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minHeight="0dp"
+                        android:text="Show progress"
+                        android:textAllCaps="false" />
+
+                    <TextView
+                        android:id="@+id/tvApkProgressLog"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:background="#F1F3F4"
+                        android:padding="10dp"
+                        android:text="No updates yet."
+                        android:textColor="@color/text_sub"
+                        android:textSize="12sp"
+                        android:typeface="monospace"
+                        android:visibility="gone" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
