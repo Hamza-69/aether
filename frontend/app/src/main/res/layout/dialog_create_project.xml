@@ -39,7 +39,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:fontFamily="sans-serif-medium"
-                    android:text="New Project"
+                    android:text="New Concept"
                     android:textColor="@color/text_main"
                     android:textSize="24sp"
                     android:textStyle="bold"
@@ -52,7 +52,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:fontFamily="sans-serif"
-                    android:text="Set up your app details"
+                    android:text="Pick a style, shape the brief, and move faster"
                     android:textColor="@color/text_sub"
                     android:textSize="14sp"
                     app:layout_constraintStart_toStartOf="parent"
@@ -96,7 +96,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:background="@null"
-                    android:hint="Project Name"
+                    android:hint="Concept name"
                     android:paddingStart="16dp"
                     android:paddingEnd="16dp"
                     android:inputType="text"
@@ -124,7 +124,7 @@
                     android:layout_height="match_parent"
                     android:background="@null"
                     android:gravity="top"
-                    android:hint="Tell AI what to build..."
+                    android:hint="Describe the users, features, and visual style..."
                     android:padding="16dp"
                     android:textColor="@color/text_main"
                     android:textColorHint="#BDBDBD"
@@ -140,7 +140,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:fontFamily="sans-serif-medium"
-                android:text="Suggestions"
+                android:text="Style prompts"
                 android:textColor="@color/text_main"
                 android:textSize="14sp"
                 android:textStyle="bold" />
@@ -158,21 +158,21 @@
                     style="@style/Widget.Material3.Chip.Assist"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Task Manager" />
+                    android:text="Neo-brutalist Task Board" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chip2"
                     style="@style/Widget.Material3.Chip.Assist"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Recipe Finder" />
+                    android:text="Glassmorphism Finance Hub" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chip3"
                     style="@style/Widget.Material3.Chip.Assist"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Habit Tracker" />
+                    android:text="Editorial Recipe Studio" />
             </com.google.android.material.chip.ChipGroup>
 
             <!-- Actions -->

@@ -231,7 +231,7 @@ public class HomeFragment extends Fragment {
         View.OnClickListener suggestionListener = v -> {
             Chip chip = (Chip) v;
             etName.setText(chip.getText().toString());
-            etDesc.setText("Build a " + chip.getText().toString().toLowerCase() + " with a modern UI and great features.");
+            etDesc.setText(buildStylePrompt(chip.getId()));
         };
 
         chip1.setOnClickListener(suggestionListener);
@@ -243,7 +243,9 @@ public class HomeFragment extends Fragment {
             String desc = etDesc.getText().toString().trim();
             if (TextUtils.isEmpty(name)) return;
 
-            String prompt = TextUtils.isEmpty(desc) ? "Create an app named " + name : desc;
+            String prompt = TextUtils.isEmpty(desc)
+                    ? "Design a polished mobile app called " + name + " with login and signup, a dashboard, searchable content, filters, CRUD actions, saved items, and a responsive production-ready interface."
+                    : desc;
             apiService.createProject(new CreateProjectRequest(prompt, name)).enqueue(new Callback<ProjectWrapperResponse>() {
                 @Override
                 public void onResponse(Call<ProjectWrapperResponse> call, Response<ProjectWrapperResponse> response) {
@@ -295,5 +297,18 @@ public class HomeFragment extends Fragment {
         }
         rvProjects.setVisibility(View.VISIBLE);
         cardEmptyHome.setVisibility(View.GONE);
+    }
+
+    private String buildStylePrompt(int chipId) {
+        if (chipId == R.id.chip1) {
+            return "Design a neo-brutalist task board with email login, project creation, drag-and-drop Kanban columns, task priorities, due dates, labels, search, and an activity feed.";
+        }
+        if (chipId == R.id.chip2) {
+            return "Design a glassmorphism finance hub with account linking, balance cards, transaction history, spending charts, budget goals, recurring bill reminders, and quick transfer actions.";
+        }
+        if (chipId == R.id.chip3) {
+            return "Design an editorial recipe studio with recipe search, ingredient filters, favorites, cooking mode step cards, shopping list generation, saved collections, and shareable recipe pages.";
+        }
+        return "Design a polished mobile app with authentication, a dashboard, search, filters, CRUD flows, saved items, and responsive layouts.";
     }
 }
