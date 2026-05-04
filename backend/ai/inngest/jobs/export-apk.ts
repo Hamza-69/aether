@@ -145,7 +145,6 @@ export const exportApkFunction = inngest.createFunction(
         where: { id: projectId },
         data: {
           apkStatus: "RUNNING",
-          apkStartedAt: new Date(),
         },
       })
 
