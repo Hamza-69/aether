@@ -4,8 +4,13 @@ import java.util.List;
 
 public class SecretsResponse {
     private List<SecretSummary> secrets;
+    private List<RequiredSecretSummary> requiredSecrets;
 
     public List<SecretSummary> getSecrets() {
         return secrets;
+    }
+
+    public List<RequiredSecretSummary> getRequiredSecrets() {
+        return requiredSecrets;
     }
 }

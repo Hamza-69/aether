@@ -57,6 +57,7 @@ import lb.edu.aub.cmps279spring26.amm125.aether.model.BackendProject;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.MessagesResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.ProjectMessage;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.ProjectWrapperResponse;
+import lb.edu.aub.cmps279spring26.amm125.aether.model.RequiredSecretSummary;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretSummary;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretsResponse;
 import lb.edu.aub.cmps279spring26.amm125.aether.model.SecretsWriteResponse;
@@ -801,19 +802,42 @@ public class ChatActivity extends AppCompatActivity {
                     return;
                 }
                 List<SecretSummary> secrets = response.body().getSecrets();
-                if (secrets.isEmpty()) {
-                    target.setText("No project secrets.");
-                    return;
-                }
-                StringBuilder sb = new StringBuilder("Current project secrets:\n");
-                for (SecretSummary secret : secrets) {
-                    sb.append("• ").append(secret.getName());
-                    if (Boolean.TRUE.equals(secret.getUseUserSecret())) {
-                        sb.append(" (uses account secret)");
+                List<RequiredSecretSummary> requiredSecrets = response.body().getRequiredSecrets();
+                StringBuilder sb = new StringBuilder();
+
+                if (requiredSecrets != null && !requiredSecrets.isEmpty()) {
+                    sb.append("Required backend secrets:\n");
+                    for (RequiredSecretSummary secret : requiredSecrets) {
+                        sb.append(Boolean.TRUE.equals(secret.getIsSet()) ? "[set] " : "[missing] ");
+                        sb.append(secret.getName());
+                        if (Boolean.TRUE.equals(secret.getIsSet())) {
+                            sb.append(" (set");
+                            if (Boolean.TRUE.equals(secret.getUseUserSecret())) {
+                                sb.append(", uses account secret");
+                            }
+                            sb.append(")");
+                        } else {
+                            sb.append(" (missing)");
+                        }
+                        sb.append('\n');
                     }
-                    sb.append('\n');
                 }
-                target.setText(sb.toString().trim());
+
+                if (!secrets.isEmpty()) {
+                    if (sb.length() > 0) {
+                        sb.append('\n');
+                    }
+                    sb.append("Current project secrets:\n");
+                    for (SecretSummary secret : secrets) {
+                        sb.append("• ").append(secret.getName());
+                        if (Boolean.TRUE.equals(secret.getUseUserSecret())) {
+                            sb.append(" (uses account secret)");
+                        }
+                        sb.append('\n');
+                    }
+                }
+
+                target.setText(sb.length() > 0 ? sb.toString().trim() : "No project secrets.");
             }
 
             @Override

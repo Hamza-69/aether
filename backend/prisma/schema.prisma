@@ -98,6 +98,7 @@ model Project {
   keyStore         KeyStore?
   deployments      Deployment[]
   secrets          Secret[]
+  requiredSecrets  ProjectRequiredSecret[]
   previews         Preview[]
   publishedProject PublishedProject?
 }
@@ -128,6 +129,19 @@ model Secret {
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, name])
+}
+
+model ProjectRequiredSecret {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+  @@index([projectId])
 }
 
 model APK {

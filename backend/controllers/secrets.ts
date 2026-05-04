@@ -15,12 +15,42 @@ secretsRouter.get("/", async (req, res) => {
       res.status(404).json({ error: "Project not found" })
       return
     }
-    const secrets = await prisma.secret.findMany({
-      where: { projectId },
-      select: { name: true, useUserSecret: true, updatedAt: true },
-      orderBy: { name: "asc" },
+    const [secrets, requiredSecrets] = await Promise.all([
+      prisma.secret.findMany({
+        where: { projectId },
+        select: { name: true, encryptedValue: true, useUserSecret: true, updatedAt: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.projectRequiredSecret.findMany({
+        where: { projectId },
+        select: { name: true, updatedAt: true },
+        orderBy: { name: "asc" },
+      }),
+    ])
+
+    const userSecretNames = secrets.filter(s => s.useUserSecret).map(s => s.name)
+    const userSecrets = userSecretNames.length > 0
+      ? await prisma.userSecret.findMany({
+          where: { userId: req.user!.id, name: { in: userSecretNames } },
+          select: { name: true },
+        })
+      : []
+    const foundUserSecrets = new Set(userSecrets.map(s => s.name))
+    const secretMap = new Map(secrets.map(s => [s.name, s]))
+
+    res.status(200).json({
+      secrets: secrets.map(({ encryptedValue, ...secret }) => secret),
+      requiredSecrets: requiredSecrets.map((required) => {
+        const secret = secretMap.get(required.name)
+        const isSet = !!secret && (secret.useUserSecret ? foundUserSecrets.has(secret.name) : !!secret.encryptedValue)
+        return {
+          name: required.name,
+          isSet,
+          useUserSecret: secret?.useUserSecret ?? false,
+          updatedAt: required.updatedAt,
+        }
+      }),
     })
-    res.status(200).json({ secrets })
   } catch (error) {
     console.error("[secretsRouter.GET] Failed:", error)
     res.status(500).json({ error: "Failed to list secrets" })

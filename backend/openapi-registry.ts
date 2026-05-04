@@ -6,6 +6,7 @@ import {
   MessageSchema,
   ProjectPreviewSchema,
   ProjectSchema,
+  RequiredSecretSummarySchema,
   SecretEntrySchema,
   SecretSummarySchema,
   SendMessageBodySchema,
@@ -42,6 +43,7 @@ registry.register("Message", MessageSchema)
 registry.register("Error", ErrorSchema)
 registry.register("SecretEntry", SecretEntrySchema)
 registry.register("SecretSummary", SecretSummarySchema)
+registry.register("RequiredSecretSummary", RequiredSecretSummarySchema)
 registry.register("UpsertSecretsBody", UpsertSecretsBodySchema)
 registry.register("Deployment", DeploymentSchema)
 registry.register("DeployResponse", DeployResponseSchema)
@@ -810,7 +812,7 @@ registry.registerPath({
   tags: ["Secrets"],
   summary: "List secret names for a project",
   description:
-    "Returns only names and updatedAt timestamps. Values are never returned by the API.",
+    "Returns configured project secret names plus backend-required secret names discovered from backend/.env.example. Values are never returned by the API.",
   security: protectedRoute,
   request: {
     params: z.object({ projectId: z.string().openapi({ example: "clxyz123" }) }),
@@ -820,7 +822,10 @@ registry.registerPath({
       description: "Secret summaries",
       content: {
         "application/json": {
-          schema: z.object({ secrets: z.array(SecretSummarySchema) }),
+          schema: z.object({
+            secrets: z.array(SecretSummarySchema),
+            requiredSecrets: z.array(RequiredSecretSummarySchema),
+          }),
         },
       },
     },

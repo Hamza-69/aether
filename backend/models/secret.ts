@@ -40,3 +40,12 @@ export const SecretSummarySchema = z
     updatedAt: z.string().datetime(),
   })
   .openapi("SecretSummary")
+
+export const RequiredSecretSummarySchema = z
+  .object({
+    name: z.string().openapi({ example: "OPENAI_API_KEY" }),
+    isSet: z.boolean().openapi({ example: false }),
+    useUserSecret: z.boolean().openapi({ example: false }),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi("RequiredSecretSummary")

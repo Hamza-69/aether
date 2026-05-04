@@ -8,12 +8,15 @@ import { codeAgent } from "../agent/agent"
 import { AgentState } from "../agent/agent"
 import {
   uploadState,
-  uploadScreenshot,
   getStateDownloadUrl,
   ZERO_STATE_FRONTEND_KEY,
   ZERO_STATE_BACKEND_KEY,
 } from "../../../lib/storage"
-import { resolveBackendSecretsFromExample, stringifyEnv } from "../../../lib/projectSecrets"
+import {
+  resolveBackendSecretsFromExample,
+  stringifyEnv,
+  updateRequiredBackendSecretsFromExample,
+} from "../../../lib/projectSecrets"
 import { publish  as publishFunction } from "../../../lib/utils"
 import { captureProjectScreenshot } from "../../../lib/screenshot"
 
@@ -163,6 +166,18 @@ export const codeAgentFunction = inngest.createFunction(
     })
 
     const result = await network.run(event.data.value, { state })
+
+    await step.run("update-required-backend-secrets", async () => {
+      await publishFunction(
+        publish,
+        "project_code_agent:" + userId + ":" + event.data.projectId,
+        "ai",
+        { message: "Checking which backend environment secrets this project needs..." },
+        streamId,
+      )
+      const sandbox = await getSandbox(SandboxId)
+      await updateRequiredBackendSecretsFromExample(sandbox, event.data.projectId)
+    })
 
     const fragmentTitleGenerator = createAgent({
       name: "fragment-title-generator",

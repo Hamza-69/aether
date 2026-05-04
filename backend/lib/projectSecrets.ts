@@ -4,17 +4,17 @@ import type { Sandbox } from "e2b"
 
 const ENV_EXAMPLE_PATH = "/home/user/backend/.env.example"
 
-const parseEnvKeys = (contents: string): string[] => {
-  const keys: string[] = []
+export const parseEnvKeys = (contents: string): string[] => {
+  const keys = new Set<string>()
   for (const rawLine of contents.split(/\r?\n/)) {
     const line = rawLine.trim()
     if (!line || line.startsWith("#")) continue
     const eq = line.indexOf("=")
     if (eq <= 0) continue
     const key = line.slice(0, eq).trim()
-    if (/^[A-Z_][A-Z0-9_]*$/.test(key)) keys.push(key)
+    if (/^[A-Z_][A-Z0-9_]*$/.test(key)) keys.add(key)
   }
-  return keys
+  return [...keys].sort()
 }
 
 export const stringifyEnv = (env: Record<string, string>): string => {
@@ -75,4 +75,37 @@ export const resolveBackendSecretsFromExample = async (
     }
   }
   return out
+}
+
+export const updateRequiredBackendSecretsFromExample = async (
+  sandbox: Sandbox,
+  projectId: string,
+): Promise<string[]> => {
+  let exampleContents = ""
+  try {
+    exampleContents = await sandbox.files.read(ENV_EXAMPLE_PATH)
+  } catch {
+    // Treat a missing backend .env.example as no backend-required secrets.
+  }
+
+  const names = parseEnvKeys(exampleContents)
+  const keep = new Set(names)
+
+  await prisma.$transaction([
+    prisma.projectRequiredSecret.deleteMany({
+      where: {
+        projectId,
+        ...(names.length > 0 ? { name: { notIn: names } } : {}),
+      },
+    }),
+    ...names.map((name) =>
+      prisma.projectRequiredSecret.upsert({
+        where: { projectId_name: { projectId, name } },
+        create: { projectId, name },
+        update: {},
+      }),
+    ),
+  ])
+
+  return [...keep]
 }
