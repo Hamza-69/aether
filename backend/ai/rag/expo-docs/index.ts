@@ -45,10 +45,12 @@ async function generateAndPublish(): Promise<void> {
   }
 
   for (const { index, embedding } of allEmbeddings) {
+    const document = documents[index]
+    if (!document) continue
     const embeddingStr = `[${embedding.join(",")}]`
     await prisma.$executeRaw`
       INSERT INTO "ExpoDocs" (id, content, embedding, "createdAt")
-      VALUES (${crypto.randomUUID()}, ${documents[index].pageContent}, ${embeddingStr}::vector, NOW())
+      VALUES (${crypto.randomUUID()}, ${document.pageContent}, ${embeddingStr}::vector, NOW())
     `
   }
 
